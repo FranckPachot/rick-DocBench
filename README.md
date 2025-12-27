@@ -74,6 +74,22 @@ Summary:
 
 **Note**: Tests use randomized ordering and global warmup to eliminate JVM/cache bias.
 
+### O(n) vs O(1) Scaling Proof
+
+Client-side BSON parsing demonstrates clear O(n) behavior:
+
+```
+RawBsonDocument.get() - Sequential BSON Parsing (O(n)):
+Position        Time (ns)    Scaling
+----------------------------------------
+1                    1074      1.00x (baseline)
+100                  5598      5.21x
+500                 24722     23.02x
+999                 39883     37.14x ← 1000x position → 37x time
+```
+
+This confirms BSON's sequential field-by-field parsing. In contrast, pre-parsed `Document.get()` using LinkedHashMap shows O(1) constant time (~20ns) regardless of position.
+
 ## Quick Start
 
 ### Prerequisites

@@ -3,7 +3,6 @@ package com.docbench.util;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -94,70 +93,5 @@ public sealed interface TimeSource permits SystemTimeSource, MockTimeSource {
             }
             return timeSource.elapsed(startNanos, timeSource.nanoTime());
         }
-    }
-}
-
-/**
- * System time source using actual system clocks.
- */
-final class SystemTimeSource implements TimeSource {
-    static final SystemTimeSource INSTANCE = new SystemTimeSource();
-
-    private SystemTimeSource() {}
-
-    @Override
-    public long nanoTime() {
-        return System.nanoTime();
-    }
-
-    @Override
-    public Instant now() {
-        return Instant.now();
-    }
-}
-
-/**
- * Mock time source for testing.
- * Allows controlled time progression.
- */
-final class MockTimeSource implements TimeSource {
-    private final AtomicLong nanoTime;
-    private final AtomicReference<Instant> instant;
-
-    MockTimeSource(long initialNanos, Instant initialInstant) {
-        this.nanoTime = new AtomicLong(initialNanos);
-        this.instant = new AtomicReference<>(initialInstant);
-    }
-
-    @Override
-    public long nanoTime() {
-        return nanoTime.get();
-    }
-
-    @Override
-    public Instant now() {
-        return instant.get();
-    }
-
-    /**
-     * Advances time by the specified duration.
-     */
-    public void advance(Duration duration) {
-        nanoTime.addAndGet(duration.toNanos());
-        instant.updateAndGet(i -> i.plus(duration));
-    }
-
-    /**
-     * Sets the nano time to a specific value.
-     */
-    public void setNanoTime(long nanos) {
-        nanoTime.set(nanos);
-    }
-
-    /**
-     * Sets the instant to a specific value.
-     */
-    public void setInstant(Instant instant) {
-        this.instant.set(instant);
     }
 }

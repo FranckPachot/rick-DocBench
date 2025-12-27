@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.time.Instant;
 
+import static com.docbench.util.TestDurations.micros;
 import static org.assertj.core.api.Assertions.*;
 
 /**
@@ -119,12 +120,12 @@ class TimeSourceTest {
             MockTimeSource timeSource = TimeSource.mock(0L);
 
             long start = timeSource.nanoTime();
-            timeSource.advance(Duration.ofMicros(500));
+            timeSource.advance(micros(500));
             long end = timeSource.nanoTime();
 
             Duration elapsed = timeSource.elapsed(start, end);
 
-            assertThat(elapsed).isEqualTo(Duration.ofMicros(500));
+            assertThat(elapsed).isEqualTo(micros(500));
         }
 
         @Test
@@ -158,10 +159,10 @@ class TimeSourceTest {
             MockTimeSource timeSource = TimeSource.mock(0L);
 
             TimeSource.TimingContext context = timeSource.startTiming();
-            timeSource.advance(Duration.ofMicros(250));
+            timeSource.advance(micros(250));
             Duration elapsed = context.stop();
 
-            assertThat(elapsed).isEqualTo(Duration.ofMicros(250));
+            assertThat(elapsed).isEqualTo(micros(250));
         }
 
         @Test
@@ -170,10 +171,10 @@ class TimeSourceTest {
             MockTimeSource timeSource = TimeSource.mock(0L);
 
             TimeSource.TimingContext context = timeSource.startTiming();
-            timeSource.advance(Duration.ofMicros(100));
+            timeSource.advance(micros(100));
 
             Duration first = context.stop();
-            timeSource.advance(Duration.ofMicros(100)); // This should not affect result
+            timeSource.advance(micros(100)); // This should not affect result
             Duration second = context.stop();
 
             assertThat(first).isEqualTo(second);

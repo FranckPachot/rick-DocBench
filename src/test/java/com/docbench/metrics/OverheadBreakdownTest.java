@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.Map;
 
+import static com.docbench.util.TestDurations.micros;
 import static org.assertj.core.api.Assertions.*;
 
 /**
@@ -16,19 +17,19 @@ import static org.assertj.core.api.Assertions.*;
 @DisplayName("OverheadBreakdown")
 class OverheadBreakdownTest {
 
-    private static final Duration TOTAL = Duration.ofMicros(1000);
-    private static final Duration CONN_ACQ = Duration.ofMicros(50);
-    private static final Duration CONN_REL = Duration.ofMicros(20);
-    private static final Duration SERIALIZATION = Duration.ofMicros(100);
-    private static final Duration WIRE_TRANSMIT = Duration.ofMicros(75);
-    private static final Duration SERVER_EXEC = Duration.ofMicros(400);
-    private static final Duration SERVER_PARSE = Duration.ofMicros(50);
-    private static final Duration SERVER_TRAVERSAL = Duration.ofMicros(200);
-    private static final Duration SERVER_INDEX = Duration.ofMicros(30);
-    private static final Duration SERVER_FETCH = Duration.ofMicros(120);
-    private static final Duration WIRE_RECEIVE = Duration.ofMicros(75);
-    private static final Duration DESERIALIZATION = Duration.ofMicros(80);
-    private static final Duration CLIENT_TRAVERSAL = Duration.ofMicros(25);
+    private static final Duration TOTAL = micros(1000);
+    private static final Duration CONN_ACQ = micros(50);
+    private static final Duration CONN_REL = micros(20);
+    private static final Duration SERIALIZATION = micros(100);
+    private static final Duration WIRE_TRANSMIT = micros(75);
+    private static final Duration SERVER_EXEC = micros(400);
+    private static final Duration SERVER_PARSE = micros(50);
+    private static final Duration SERVER_TRAVERSAL = micros(200);
+    private static final Duration SERVER_INDEX = micros(30);
+    private static final Duration SERVER_FETCH = micros(120);
+    private static final Duration WIRE_RECEIVE = micros(75);
+    private static final Duration DESERIALIZATION = micros(80);
+    private static final Duration CLIENT_TRAVERSAL = micros(25);
 
     private OverheadBreakdown createStandardBreakdown() {
         return new OverheadBreakdown(
@@ -77,7 +78,7 @@ class OverheadBreakdownTest {
         @DisplayName("should be immutable")
         void record_shouldBeImmutable() {
             Map<String, Duration> mutableMap = new java.util.HashMap<>();
-            mutableMap.put("custom", Duration.ofMicros(10));
+            mutableMap.put("custom", micros(10));
 
             OverheadBreakdown breakdown = new OverheadBreakdown(
                     TOTAL, CONN_ACQ, CONN_REL, SERIALIZATION, WIRE_TRANSMIT,
@@ -87,7 +88,7 @@ class OverheadBreakdownTest {
             );
 
             // Original map modification should not affect the record
-            mutableMap.put("another", Duration.ofMicros(20));
+            mutableMap.put("another", micros(20));
 
             assertThat(breakdown.platformSpecific()).doesNotContainKey("another");
         }
@@ -116,7 +117,7 @@ class OverheadBreakdownTest {
 
             assertThat(breakdown.traversalOverhead())
                     .isEqualTo(expected)
-                    .isEqualTo(Duration.ofMicros(225)); // 200 + 25
+                    .isEqualTo(micros(225)); // 200 + 25
         }
 
         @Test
@@ -128,7 +129,7 @@ class OverheadBreakdownTest {
 
             assertThat(breakdown.networkOverhead())
                     .isEqualTo(expected)
-                    .isEqualTo(Duration.ofMicros(150)); // 75 + 75
+                    .isEqualTo(micros(150)); // 75 + 75
         }
 
         @Test
@@ -140,7 +141,7 @@ class OverheadBreakdownTest {
 
             assertThat(breakdown.serializationOverhead())
                     .isEqualTo(expected)
-                    .isEqualTo(Duration.ofMicros(180)); // 100 + 80
+                    .isEqualTo(micros(180)); // 100 + 80
         }
 
         @Test
@@ -152,7 +153,7 @@ class OverheadBreakdownTest {
 
             assertThat(breakdown.connectionOverhead())
                     .isEqualTo(expected)
-                    .isEqualTo(Duration.ofMicros(70)); // 50 + 20
+                    .isEqualTo(micros(70)); // 50 + 20
         }
     }
 
@@ -226,8 +227,8 @@ class OverheadBreakdownTest {
         @DisplayName("should store platform-specific metrics")
         void platformSpecific_shouldStoreMetrics() {
             Map<String, Duration> specific = Map.of(
-                    "mongodb.cursor_time", Duration.ofMicros(50),
-                    "mongodb.getmore_time", Duration.ofMicros(30)
+                    "mongodb.cursor_time", micros(50),
+                    "mongodb.getmore_time", micros(30)
             );
 
             OverheadBreakdown breakdown = new OverheadBreakdown(
@@ -239,8 +240,8 @@ class OverheadBreakdownTest {
 
             assertThat(breakdown.platformSpecific())
                     .hasSize(2)
-                    .containsEntry("mongodb.cursor_time", Duration.ofMicros(50))
-                    .containsEntry("mongodb.getmore_time", Duration.ofMicros(30));
+                    .containsEntry("mongodb.cursor_time", micros(50))
+                    .containsEntry("mongodb.getmore_time", micros(30));
         }
 
         @Test
@@ -297,13 +298,13 @@ class OverheadBreakdownTest {
         void builder_shouldAddPlatformSpecific() {
             OverheadBreakdown breakdown = OverheadBreakdown.builder()
                     .totalLatency(TOTAL)
-                    .addPlatformSpecific("custom.metric", Duration.ofMicros(100))
-                    .addPlatformSpecific("another.metric", Duration.ofMicros(50))
+                    .addPlatformSpecific("custom.metric", micros(100))
+                    .addPlatformSpecific("another.metric", micros(50))
                     .build();
 
             assertThat(breakdown.platformSpecific())
-                    .containsEntry("custom.metric", Duration.ofMicros(100))
-                    .containsEntry("another.metric", Duration.ofMicros(50));
+                    .containsEntry("custom.metric", micros(100))
+                    .containsEntry("another.metric", micros(50));
         }
     }
 
@@ -315,7 +316,7 @@ class OverheadBreakdownTest {
         @DisplayName("should reject negative durations")
         void constructor_withNegativeDuration_shouldThrow() {
             assertThatThrownBy(() -> new OverheadBreakdown(
-                    Duration.ofMicros(-1),
+                    micros(-1),
                     Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO,
                     Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO,
                     Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO,
@@ -359,11 +360,11 @@ class OverheadBreakdownTest {
         void bsonLikeBreakdown_shouldShowHighTraversalRatio() {
             // Simulating BSON O(n) traversal overhead
             OverheadBreakdown bsonBreakdown = OverheadBreakdown.builder()
-                    .totalLatency(Duration.ofMicros(1000))
-                    .serverTraversalTime(Duration.ofMicros(400)) // High traversal
-                    .clientTraversalTime(Duration.ofMicros(150)) // High client traversal
-                    .serverFetchTime(Duration.ofMicros(100))
-                    .deserializationTime(Duration.ofMicros(200))
+                    .totalLatency(micros(1000))
+                    .serverTraversalTime(micros(400)) // High traversal
+                    .clientTraversalTime(micros(150)) // High client traversal
+                    .serverFetchTime(micros(100))
+                    .deserializationTime(micros(200))
                     .build();
 
             // 55% of latency in traversal
@@ -375,11 +376,11 @@ class OverheadBreakdownTest {
         void osonLikeBreakdown_shouldShowLowTraversalRatio() {
             // Simulating OSON O(1) traversal overhead
             OverheadBreakdown osonBreakdown = OverheadBreakdown.builder()
-                    .totalLatency(Duration.ofMicros(500))
-                    .serverTraversalTime(Duration.ofMicros(50))  // Low traversal (hash lookup)
-                    .clientTraversalTime(Duration.ofMicros(20))  // Low client traversal
-                    .serverFetchTime(Duration.ofMicros(100))
-                    .deserializationTime(Duration.ofMicros(50))
+                    .totalLatency(micros(500))
+                    .serverTraversalTime(micros(50))  // Low traversal (hash lookup)
+                    .clientTraversalTime(micros(20))  // Low client traversal
+                    .serverFetchTime(micros(100))
+                    .deserializationTime(micros(50))
                     .build();
 
             // Only 14% in traversal
@@ -390,17 +391,17 @@ class OverheadBreakdownTest {
         @DisplayName("should accurately compare BSON vs OSON traversal overhead")
         void comparison_shouldShowBsonVsOsonDifference() {
             OverheadBreakdown bson = OverheadBreakdown.builder()
-                    .totalLatency(Duration.ofMicros(1245))
-                    .serverTraversalTime(Duration.ofMicros(600))
-                    .clientTraversalTime(Duration.ofMicros(247))
-                    .serverFetchTime(Duration.ofMicros(100))
+                    .totalLatency(micros(1245))
+                    .serverTraversalTime(micros(600))
+                    .clientTraversalTime(micros(247))
+                    .serverFetchTime(micros(100))
                     .build();
 
             OverheadBreakdown oson = OverheadBreakdown.builder()
-                    .totalLatency(Duration.ofMicros(423))
-                    .serverTraversalTime(Duration.ofMicros(80))
-                    .clientTraversalTime(Duration.ofMicros(32))
-                    .serverFetchTime(Duration.ofMicros(100))
+                    .totalLatency(micros(423))
+                    .serverTraversalTime(micros(80))
+                    .clientTraversalTime(micros(32))
+                    .serverFetchTime(micros(100))
                     .build();
 
             Duration bsonTraversal = bson.traversalOverhead();  // 847

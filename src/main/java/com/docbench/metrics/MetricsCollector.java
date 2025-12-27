@@ -66,9 +66,10 @@ public final class MetricsCollector {
             nanos = MAX_VALUE;
         }
 
-        histograms
-                .computeIfAbsent(metricName, k -> createHistogram())
-                .recordValue(nanos);
+        Histogram histogram = histograms.computeIfAbsent(metricName, k -> createHistogram());
+        synchronized (histogram) {
+            histogram.recordValue(nanos);
+        }
     }
 
     /**

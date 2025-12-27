@@ -10,13 +10,23 @@ group = "com.docbench"
 version = "1.0.0-SNAPSHOT"
 
 java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
-    }
+    sourceCompatibility = JavaVersion.VERSION_23
+    targetCompatibility = JavaVersion.VERSION_23
 }
 
 repositories {
     mavenCentral()
+    // Oracle Maven repository for SODA and additional dependencies
+    maven {
+        url = uri("https://maven.oracle.com/")
+        content {
+            includeGroupByRegex("com\\.oracle.*")
+        }
+    }
+    // Glassfish for javax.json
+    maven {
+        url = uri("https://repo.maven.apache.org/maven2/")
+    }
 }
 
 dependencies {
@@ -39,10 +49,10 @@ dependencies {
     // MongoDB Driver
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
 
-    // Oracle JDBC & SODA
-    implementation("com.oracle.database.jdbc:ojdbc11:23.3.0.23.09")
-    implementation("com.oracle.database.soda:orajsoda:1.1.7")
-    implementation("com.oracle.database.jdbc:ucp:23.3.0.23.09")
+    // Oracle JDBC & SODA - temporarily disabled, will be enabled for Oracle adapter phase
+    // compileOnly("com.oracle.database.jdbc:ojdbc11:23.3.0.23.09")
+    // compileOnly("com.oracle.database.soda:orajsoda:1.1.7")
+    // compileOnly("com.oracle.database.jdbc:ucp:23.3.0.23.09")
 
     // JSON Processing
     implementation("jakarta.json:jakarta.json-api:2.1.3")
@@ -59,8 +69,8 @@ dependencies {
 
     // Testing - Assertions & Mocking
     testImplementation("org.assertj:assertj-core:3.25.1")
-    testImplementation("org.mockito:mockito-core:5.8.0")
-    testImplementation("org.mockito:mockito-junit-jupiter:5.8.0")
+    testImplementation("org.mockito:mockito-core:5.14.2")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.14.2")
 
     // Testing - TestContainers
     testImplementation("org.testcontainers:testcontainers:1.19.3")
@@ -82,14 +92,18 @@ application {
 
 tasks.withType<JavaCompile> {
     options.compilerArgs.addAll(listOf(
-        "-Aproject=${project.group}/${project.name}",
-        "--enable-preview"
+        "-Aproject=${project.group}/${project.name}"
     ))
 }
 
 tasks.test {
     useJUnitPlatform()
-    jvmArgs("--enable-preview")
+    // Required for Mockito with Java 21+
+    jvmArgs(
+        "-XX:+EnableDynamicAgentLoading",
+        "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+        "--add-opens", "java.base/java.lang.reflect=ALL-UNNAMED"
+    )
     testLogging {
         events("passed", "skipped", "failed")
         showStandardStreams = true
@@ -115,7 +129,6 @@ tasks.register<Test>("integrationTest") {
     testClassesDirs = sourceSets["integrationTest"].output.classesDirs
     classpath = sourceSets["integrationTest"].runtimeClasspath
     useJUnitPlatform()
-    jvmArgs("--enable-preview")
     shouldRunAfter(tasks.test)
 }
 

@@ -71,6 +71,7 @@ public class MongoDBAdapter implements DatabaseAdapter {
     private MongoDatabase database;
     private MongoCollection<Document> collection;
     private BsonTimingInterceptor timingInterceptor;
+    private MetricsCollector collector;
     private String collectionName = "benchmark_docs";
     private TimeSource timeSource = TimeSource.system();
 
@@ -136,8 +137,9 @@ public class MongoDBAdapter implements DatabaseAdapter {
         String uri = config.uri().orElseThrow();
         String dbName = config.database();
 
-        MetricsCollector collector = new MetricsCollector(timeSource);
-        timingInterceptor = new BsonTimingInterceptor(collector, timeSource);
+        // Create a shared collector for this connection
+        this.collector = new MetricsCollector(timeSource);
+        timingInterceptor = new BsonTimingInterceptor(this.collector, timeSource);
 
         MongoClientSettings settings = MongoClientSettings.builder()
                 .applyConnectionString(new ConnectionString(uri))

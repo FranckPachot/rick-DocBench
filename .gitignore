@@ -50,5 +50,6 @@ secrets/
 
 # Local configuration
 local.properties
+config/local.properties
 *-local.yaml
 *-local.yml

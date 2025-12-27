@@ -1,0 +1,11 @@
+# Local configuration template
+# Copy this file to local.properties and update with your credentials
+# DO NOT commit local.properties
+
+mongodb.uri=mongodb://username:password@localhost:27017/database
+mongodb.database=testdb
+
+# Oracle configuration (for OSON adapter)
+# oracle.uri=jdbc:oracle:thin:@localhost:1521/FREEPDB1
+# oracle.username=docbench
+# oracle.password=password

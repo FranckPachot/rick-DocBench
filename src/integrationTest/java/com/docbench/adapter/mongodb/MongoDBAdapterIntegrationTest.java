@@ -7,25 +7,86 @@ import com.docbench.metrics.OverheadBreakdown;
 import com.docbench.util.TimeSource;
 import org.junit.jupiter.api.*;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.*;
 
 /**
  * Integration tests for MongoDBAdapter against real MongoDB instance.
- * Configure MONGODB_URI environment variable or update the default below.
+ *
+ * Configuration priority:
+ * 1. Environment variable MONGODB_URI
+ * 2. config/local.properties file
+ * 3. Default fallback (will fail without proper config)
  */
 @DisplayName("MongoDBAdapter Integration Tests")
 @Tag("integration")
 class MongoDBAdapterIntegrationTest {
 
-    private static final String MONGODB_URI = System.getenv().getOrDefault(
-            "MONGODB_URI",
-            "mongodb://translator:translator123@localhost:27017/testdb"
-    );
+    private static final String MONGODB_URI = loadMongoDbUri();
+    private static final String MONGODB_DATABASE = loadMongoDbDatabase();
+
+    private static String loadMongoDbUri() {
+        // Priority 1: Environment variable
+        String envUri = System.getenv("MONGODB_URI");
+        if (envUri != null && !envUri.isBlank()) {
+            return envUri;
+        }
+
+        // Priority 2: Config file
+        Properties props = loadConfigProperties();
+        if (props != null) {
+            String configUri = props.getProperty("mongodb.uri");
+            if (configUri != null && !configUri.isBlank()) {
+                return configUri;
+            }
+        }
+
+        // Priority 3: Fail with helpful message
+        throw new IllegalStateException(
+                "MongoDB URI not configured. Set MONGODB_URI environment variable " +
+                "or create config/local.properties with mongodb.uri property. " +
+                "See config/local.properties.example for template.");
+    }
+
+    private static String loadMongoDbDatabase() {
+        String envDb = System.getenv("MONGODB_DATABASE");
+        if (envDb != null && !envDb.isBlank()) {
+            return envDb;
+        }
+
+        Properties props = loadConfigProperties();
+        if (props != null) {
+            String configDb = props.getProperty("mongodb.database");
+            if (configDb != null && !configDb.isBlank()) {
+                return configDb;
+            }
+        }
+
+        return "testdb"; // Default
+    }
+
+    private static Properties loadConfigProperties() {
+        Path configPath = Path.of("config/local.properties");
+        if (Files.exists(configPath)) {
+            try (InputStream is = Files.newInputStream(configPath)) {
+                Properties props = new Properties();
+                props.load(is);
+                return props;
+            } catch (IOException e) {
+                System.err.println("Warning: Could not load config/local.properties: " + e.getMessage());
+            }
+        }
+        return null;
+    }
 
     private MongoDBAdapter adapter;
     private InstrumentedConnection connection;
@@ -38,7 +99,7 @@ class MongoDBAdapterIntegrationTest {
 
         ConnectionConfig config = ConnectionConfig.builder()
                 .uri(MONGODB_URI)
-                .database("testdb")
+                .database(MONGODB_DATABASE)
                 .build();
 
         connection = adapter.connect(config);

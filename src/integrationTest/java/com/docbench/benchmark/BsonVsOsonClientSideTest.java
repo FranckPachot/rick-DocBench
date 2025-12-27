@@ -39,9 +39,9 @@ import java.util.*;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class BsonVsOsonClientSideTest {
 
-    // Configuration
-    private static final int WARMUP_ITERATIONS = 100;
-    private static final int MEASUREMENT_ITERATIONS = 500;
+    // Configuration - high iteration count for measurable nanosecond-level timings
+    private static final int WARMUP_ITERATIONS = 10_000;
+    private static final int MEASUREMENT_ITERATIONS = 100_000;
 
     // MongoDB
     private static MongoClient mongoClient;
@@ -269,10 +269,10 @@ class BsonVsOsonClientSideTest {
         String description = "Position " + targetPosition + "/" + totalFields;
         results.put(testId, new ComparisonResult(testId, mongoNanos, oracleNanos, description));
 
-        System.out.printf("  %-25s: BSON=%8d us, OSON=%8d us, Ratio=%6.2fx%n",
+        System.out.printf("  %-25s: BSON=%8d ns, OSON=%8d ns, Ratio=%6.2fx%n",
                 description,
-                mongoNanos / 1000,
-                oracleNanos / 1000,
+                mongoNanos,
+                oracleNanos,
                 (double) mongoNanos / oracleNanos);
     }
 
@@ -326,10 +326,10 @@ class BsonVsOsonClientSideTest {
         String description = "Nested depth " + depth;
         results.put(testId, new ComparisonResult(testId, mongoNanos, oracleNanos, description));
 
-        System.out.printf("  %-25s: BSON=%8d us, OSON=%8d us, Ratio=%6.2fx%n",
+        System.out.printf("  %-25s: BSON=%8d ns, OSON=%8d ns, Ratio=%6.2fx%n",
                 description,
-                mongoNanos / 1000,
-                oracleNanos / 1000,
+                mongoNanos,
+                oracleNanos,
                 (double) mongoNanos / oracleNanos);
     }
 
@@ -482,7 +482,7 @@ class BsonVsOsonClientSideTest {
         System.out.println("=".repeat(80));
         System.out.println();
         System.out.printf("%-28s %12s %12s %10s %s%n",
-                "Test Case", "BSON (us)", "OSON (us)", "Ratio", "Winner");
+                "Test Case", "BSON (ns)", "OSON (ns)", "Ratio", "Winner");
         System.out.println("-".repeat(80));
 
         long totalBson = 0;
@@ -504,19 +504,19 @@ class BsonVsOsonClientSideTest {
 
         for (Map.Entry<String, ComparisonResult> entry : sorted) {
             ComparisonResult result = entry.getValue();
-            long bsonUs = result.bsonNanos / 1000;
-            long osonUs = result.osonNanos / 1000;
+            long bsonNs = result.bsonNanos;
+            long osonNs = result.osonNanos;
             double ratio = (double) result.bsonNanos / result.osonNanos;
             String winner = ratio > 1.0 ? "OSON" : "BSON";
 
             if (ratio > 1.0) osonWins++;
             else bsonWins++;
 
-            totalBson += bsonUs;
-            totalOson += osonUs;
+            totalBson += bsonNs;
+            totalOson += osonNs;
 
             System.out.printf("%-28s %12d %12d %9.2fx %s%n",
-                    result.description, bsonUs, osonUs, ratio, winner);
+                    result.description, bsonNs, osonNs, ratio, winner);
         }
 
         System.out.println("-".repeat(80));

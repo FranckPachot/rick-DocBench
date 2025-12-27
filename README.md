@@ -76,29 +76,32 @@ Summary:
 
 ### O(n) vs O(1) Client-Side Field Access
 
-Pure client-side field access (network overhead eliminated):
+Pure client-side field access (network overhead eliminated, 100K iterations per test):
 
 ```
 BSON O(n) vs OSON O(1) - Client-Side Access:
 ================================================================================
-Test Case                       BSON (us)    OSON (us)      Ratio
+Test Case                       BSON (ns)    OSON (ns)      Ratio
 --------------------------------------------------------------------------------
-Position 1/100                          1            2      0.44x (BSON)
-Position 50/100                        11            0     26.84x (OSON)
-Position 100/100                        9            0     44.72x (OSON)
-Position 500/500                       22            1     17.01x (OSON)
-Position 1000/1000                     35            0    198.34x (OSON)
-Nested depth 3                          7            0      7.41x (OSON)
+Position 1/100                        394           88      4.48x OSON
+Position 50/100                      2729           89     30.66x OSON
+Position 100/100                     3227           51     63.27x OSON
+Position 500/500                    15566           92    169.20x OSON
+Position 1000/1000                  30640           59    519.32x OSON
+Nested depth 1                        694          102      6.80x OSON
+Nested depth 3                       1300          111     11.71x OSON
+Nested depth 5                       1979          154     12.85x OSON
 --------------------------------------------------------------------------------
-TOTAL                                  90            4     22.50x OSON
+TOTAL                               56529          746     75.78x OSON
 
-O(n) Scaling: Position 1 → 1000 = BSON time increased 30x
-Overall: OSON is 22.50x faster for client-side field access
+O(n) Scaling: Position 1 → 1000 = BSON time increased 77.8x
+Overall: OSON is 75.78x faster for client-side field access
 ```
 
 **Key Finding**:
-- **BSON** (`RawBsonDocument.get`): O(n) sequential scanning - time increases with position
-- **OSON** (`OracleJsonObject.get`): O(1) hash lookup - constant ~1μs regardless of position
+- **BSON** (`RawBsonDocument.get`): O(n) sequential scanning - time increases with field position
+- **OSON** (`OracleJsonObject.get`): O(1) hash lookup - constant ~60-150ns regardless of position
+- At position 1000, OSON is **519x faster** than BSON for field access
 
 ## Quick Start
 

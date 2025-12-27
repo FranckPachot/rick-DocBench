@@ -34,46 +34,45 @@ Real benchmark results comparing BSON vs OSON field access performance:
 
 Test Case                            BSON (μs)  OSON (μs)   Ratio  Winner
 --------------------------------------------------------------------------------
-Position 1/100 (projection)              1280        572   2.24x  OSON
-Position 50/100 (projection)              959        494   1.94x  OSON
-Position 100/100 (projection)             726        436   1.67x  OSON
-Position 500/500 (projection)             783        443   1.77x  OSON
-Depth 1 projection                        858        410   2.09x  OSON
-Depth 3 projection                        580        360   1.61x  OSON
-Depth 5 projection                        567        347   1.63x  OSON
-Depth 8 projection                        622        361   1.72x  OSON
-3 fields from 200                         598        380   1.57x  OSON
-5 fields from 200                         547        389   1.41x  OSON
-50 fields (full read)                     665        706   0.94x  BSON
-200 fields (full read)                    690        727   0.95x  BSON
-customer.tier (nested)                    520        349   1.49x  OSON
-grandTotal (last field)                   530        351   1.51x  OSON
+Position 1/100 (projection)               518        367   1.41x  OSON
+Position 50/100 (projection)              606        377   1.61x  OSON
+Position 100/100 (projection)             487        348   1.40x  OSON
+Position 500/500 (projection)             538        358   1.50x  OSON
+Depth 1 projection                        509        361   1.41x  OSON
+Depth 3 projection                        567        351   1.62x  OSON
+Depth 5 projection                        871        480   1.81x  OSON
+Depth 8 projection                        553        365   1.52x  OSON
+3 fields from 200                         545        384   1.42x  OSON
+5 fields from 200                         555        397   1.40x  OSON
+50 fields (full read)                     596        679   0.88x  BSON
+200 fields (full read)                    642        787   0.82x  BSON
+customer.tier (nested)                    530        354   1.50x  OSON
+grandTotal (last field)                   791        419   1.89x  OSON
 --------------------------------------------------------------------------------
-TOTAL                                    9925       6325   1.57x  OSON
+TOTAL                                    8308       6027   1.38x  OSON
 
 Summary:
   BSON wins: 2 (full document reads)
   OSON wins: 12 (field projections)
-  Overall: OSON 1.57x faster
+  Overall: OSON 1.38x faster
 ================================================================================
 ```
 
-**Key Finding**: OSON's O(1) hash-indexed access via `JSON_VALUE` is **1.5-2.2x faster** for field projection operations. Full document reads favor BSON slightly (0.94-0.95x).
+**Key Finding**: Oracle's `JSON_VALUE` hash-indexed access is **1.4-1.9x faster** for field projection operations. Full document reads favor BSON (0.82-0.88x) since both must parse the entire document, and BSON has lower per-field overhead.
 
 ### Benchmark Test Descriptions
 
 | Test | Description | Purpose |
 |------|-------------|---------|
-| **Position 1/100** | Extract first field from 100-field document | BSON scans just 1 field; best case for BSON |
-| **Position 50/100** | Extract middle field from 100-field document | BSON scans 50 fields; OSON does O(1) lookup |
-| **Position 100/100** | Extract last field from 100-field document | Worst case for BSON O(n) scanning |
-| **Position 500/500** | Extract last field from 500-field document | Tests scalability with larger documents |
-| **Depth 1-8** | Extract nested field at various depths | OSON hash-lookup at each level vs BSON sequential scan |
-| **3 fields from 200** | Project 3 scattered fields from 200-field doc | OSON: 3 hash lookups; BSON: potentially full scan |
-| **5 fields from 200** | Project 5 scattered fields from 200-field doc | Multi-field extraction comparison |
-| **50/200 fields (full)** | Read entire document | Baseline: both must read everything |
+| **Position 1/50/100** | Extract single field from 100-field document | Compares server-side field extraction overhead |
+| **Position 500/500** | Extract field from 500-field document | Tests scalability with larger documents |
+| **Depth 1-8** | Extract nested field at various depths | Tests nested object traversal (path navigation) |
+| **3/5 fields from 200** | Project multiple scattered fields | Multi-field extraction comparison |
+| **50/200 fields (full)** | Read entire document | Baseline: full document parsing overhead |
 | **customer.tier** | Access nested field in e-commerce order | Real-world nested object traversal |
-| **grandTotal** | Access last field in complex document | Tests last-field penalty in BSON |
+| **grandTotal** | Access field at end of complex document | Complex document field extraction |
+
+**Note**: Tests use randomized ordering and global warmup to eliminate JVM/cache bias.
 
 ## Quick Start
 

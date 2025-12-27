@@ -25,16 +25,20 @@ import static org.assertj.core.api.Assertions.*;
  *
  * Key difference from previous version: Uses native SQL/JSON (JSON_VALUE)
  * for Oracle instead of SODA, demonstrating true O(1) field extraction.
+ *
+ * NOTE: Tests use random ordering to eliminate JVM/cache warmup bias that would
+ * otherwise make earlier tests appear slower than later tests.
  */
 @DisplayName("BSON vs OSON Performance Comparison (SQL/JSON)")
 @Tag("benchmark")
 @Tag("integration")
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@TestMethodOrder(MethodOrderer.Random.class)
 class BsonVsOsonComparisonTest {
 
-    // Configuration
-    private static final int WARMUP_ITERATIONS = 20;
+    // Configuration - higher warmup to stabilize JIT and caches
+    private static final int WARMUP_ITERATIONS = 50;
     private static final int MEASUREMENT_ITERATIONS = 100;
+    private static final int GLOBAL_WARMUP_ITERATIONS = 200;
 
     // Adapters and connections
     private static MongoDBAdapter mongoAdapter;
@@ -84,6 +88,37 @@ class BsonVsOsonComparisonTest {
         System.out.println("  BSON: O(n) sequential field scanning (MongoDB)");
         System.out.println("  OSON: O(1) hash-indexed field lookup via JSON_VALUE (Oracle 23ai)");
         System.out.println("=".repeat(80));
+
+        // Global warmup to stabilize JVM JIT and database caches before any tests run
+        runGlobalWarmup();
+    }
+
+    private static void runGlobalWarmup() {
+        System.out.println("\nRunning global warmup (" + GLOBAL_WARMUP_ITERATIONS + " iterations)...");
+
+        // Create a warmup document
+        JsonDocument warmupDoc = JsonDocument.builder("warmup-doc")
+                .field("field_001", "warmup value 1")
+                .field("field_050", "warmup value 50")
+                .field("field_100", "warmup value 100")
+                .build();
+
+        // Insert warmup document
+        mongoAdapter.execute(mongoConnection, new InsertOperation("warmup-mongo", warmupDoc), mongoCollector);
+        oracleAdapter.execute(oracleConnection, new InsertOperation("warmup-oracle", warmupDoc), oracleCollector);
+
+        // Run warmup iterations to stabilize JIT and caches
+        ReadOperation read = ReadOperation.withProjection("warmup-read", "warmup-doc", List.of("field_050"));
+        for (int i = 0; i < GLOBAL_WARMUP_ITERATIONS; i++) {
+            mongoAdapter.execute(mongoConnection, read, mongoCollector);
+            oracleAdapter.execute(oracleConnection, read, oracleCollector);
+        }
+
+        // Reset collectors
+        mongoCollector.reset();
+        oracleCollector.reset();
+
+        System.out.println("Global warmup complete.\n");
     }
 
     @AfterAll
@@ -124,28 +159,28 @@ class BsonVsOsonComparisonTest {
     // =========================================================================
 
     @Test
-    @Order(1)
+    
     @DisplayName("Single Field Projection: First field in 100-field document")
     void projection_firstField_100Fields() {
         testSingleFieldProjection("first-100", 1, 100, "target_field");
     }
 
     @Test
-    @Order(2)
+    
     @DisplayName("Single Field Projection: Middle field in 100-field document")
     void projection_middleField_100Fields() {
         testSingleFieldProjection("middle-100", 50, 100, "target_field");
     }
 
     @Test
-    @Order(3)
+    
     @DisplayName("Single Field Projection: Last field in 100-field document")
     void projection_lastField_100Fields() {
         testSingleFieldProjection("last-100", 100, 100, "target_field");
     }
 
     @Test
-    @Order(4)
+    
     @DisplayName("Single Field Projection: Last field in 500-field document")
     void projection_lastField_500Fields() {
         testSingleFieldProjection("last-500", 500, 500, "target_field");
@@ -180,28 +215,28 @@ class BsonVsOsonComparisonTest {
     // =========================================================================
 
     @Test
-    @Order(10)
+    
     @DisplayName("Nested Field Projection: depth 1")
     void nestedProjection_depth1() {
         testNestedFieldProjection("nested-1", 1);
     }
 
     @Test
-    @Order(11)
+    
     @DisplayName("Nested Field Projection: depth 3")
     void nestedProjection_depth3() {
         testNestedFieldProjection("nested-3", 3);
     }
 
     @Test
-    @Order(12)
+    
     @DisplayName("Nested Field Projection: depth 5")
     void nestedProjection_depth5() {
         testNestedFieldProjection("nested-5", 5);
     }
 
     @Test
-    @Order(13)
+    
     @DisplayName("Nested Field Projection: depth 8")
     void nestedProjection_depth8() {
         testNestedFieldProjection("nested-8", 8);
@@ -239,14 +274,14 @@ class BsonVsOsonComparisonTest {
     // =========================================================================
 
     @Test
-    @Order(20)
+    
     @DisplayName("Multi-Field Projection: 3 fields from 200-field document")
     void multiProjection_3fields() {
         testMultiFieldProjection("multi-3", 200, List.of("field_010", "field_100", "field_190"));
     }
 
     @Test
-    @Order(21)
+    
     @DisplayName("Multi-Field Projection: 5 fields from 200-field document")
     void multiProjection_5fields() {
         testMultiFieldProjection("multi-5", 200,
@@ -283,14 +318,14 @@ class BsonVsOsonComparisonTest {
     // =========================================================================
 
     @Test
-    @Order(30)
+    
     @DisplayName("Full Document Read: 50 fields")
     void fullRead_50fields() {
         testFullDocumentRead("full-50", 50);
     }
 
     @Test
-    @Order(31)
+    
     @DisplayName("Full Document Read: 200 fields")
     void fullRead_200fields() {
         testFullDocumentRead("full-200", 200);
@@ -324,7 +359,7 @@ class BsonVsOsonComparisonTest {
     // =========================================================================
 
     @Test
-    @Order(40)
+    
     @DisplayName("E-commerce: Access customer.profile.tier (3 levels deep)")
     void ecommerce_nestedCustomerField() {
         String docId = "ecom-nested";
@@ -348,7 +383,7 @@ class BsonVsOsonComparisonTest {
     }
 
     @Test
-    @Order(41)
+    
     @DisplayName("E-commerce: Access grandTotal (last field)")
     void ecommerce_lastField() {
         String docId = "ecom-total";

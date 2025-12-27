@@ -74,21 +74,31 @@ Summary:
 
 **Note**: Tests use randomized ordering and global warmup to eliminate JVM/cache bias.
 
-### O(n) vs O(1) Scaling Proof
+### O(n) vs O(1) Client-Side Field Access
 
-Client-side BSON parsing demonstrates clear O(n) behavior:
+Pure client-side field access (network overhead eliminated):
 
 ```
-RawBsonDocument.get() - Sequential BSON Parsing (O(n)):
-Position        Time (ns)    Scaling
-----------------------------------------
-1                    1074      1.00x (baseline)
-100                  5598      5.21x
-500                 24722     23.02x
-999                 39883     37.14x ← 1000x position → 37x time
+BSON O(n) vs OSON O(1) - Client-Side Access:
+================================================================================
+Test Case                       BSON (us)    OSON (us)      Ratio
+--------------------------------------------------------------------------------
+Position 1/100                          1            2      0.44x (BSON)
+Position 50/100                        11            0     26.84x (OSON)
+Position 100/100                        9            0     44.72x (OSON)
+Position 500/500                       22            1     17.01x (OSON)
+Position 1000/1000                     35            0    198.34x (OSON)
+Nested depth 3                          7            0      7.41x (OSON)
+--------------------------------------------------------------------------------
+TOTAL                                  90            4     22.50x OSON
+
+O(n) Scaling: Position 1 → 1000 = BSON time increased 30x
+Overall: OSON is 22.50x faster for client-side field access
 ```
 
-This confirms BSON's sequential field-by-field parsing. In contrast, pre-parsed `Document.get()` using LinkedHashMap shows O(1) constant time (~20ns) regardless of position.
+**Key Finding**:
+- **BSON** (`RawBsonDocument.get`): O(n) sequential scanning - time increases with position
+- **OSON** (`OracleJsonObject.get`): O(1) hash lookup - constant ~1μs regardless of position
 
 ## Quick Start
 

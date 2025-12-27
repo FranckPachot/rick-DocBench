@@ -49,10 +49,17 @@ dependencies {
     // MongoDB Driver
     implementation("org.mongodb:mongodb-driver-sync:4.11.1")
 
-    // Oracle JDBC & SODA - temporarily disabled, will be enabled for Oracle adapter phase
-    // compileOnly("com.oracle.database.jdbc:ojdbc11:23.3.0.23.09")
-    // compileOnly("com.oracle.database.soda:orajsoda:1.1.7")
-    // compileOnly("com.oracle.database.jdbc:ucp:23.3.0.23.09")
+    // Oracle JDBC & SODA for OSON adapter (Oracle 23ai compatible)
+    implementation("com.oracle.database.jdbc:ojdbc11:23.6.0.24.10")
+    implementation("com.oracle.database.soda:orajsoda:1.1.29") {
+        // Exclude the problematic javax.json reference
+        exclude(group = "org.glassfish", module = "javax.json")
+    }
+    implementation("com.oracle.database.jdbc:ucp:23.6.0.24.10")
+    // SODA requires javax.json 1.x (not jakarta.json 2.x)
+    // Use the javax.json-api + glassfish implementation combo
+    implementation("javax.json:javax.json-api:1.1.4")
+    runtimeOnly("org.glassfish:javax.json:1.1.4")
 
     // JSON Processing
     implementation("jakarta.json:jakarta.json-api:2.1.3")
@@ -130,6 +137,14 @@ tasks.register<Test>("integrationTest") {
     classpath = sourceSets["integrationTest"].runtimeClasspath
     useJUnitPlatform()
     shouldRunAfter(tasks.test)
+    // Run integration tests sequentially to avoid overwhelming database connections
+    maxParallelForks = 1
+    // Required for Mockito with Java 21+
+    jvmArgs(
+        "-XX:+EnableDynamicAgentLoading",
+        "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+        "--add-opens", "java.base/java.lang.reflect=ALL-UNNAMED"
+    )
 }
 
 // PIT Mutation Testing

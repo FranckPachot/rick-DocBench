@@ -4,11 +4,11 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.RawBsonDocument;
 import org.junit.jupiter.api.*;
 
-import oracle.sql.json.OracleJsonFactory;
 import oracle.sql.json.OracleJsonObject;
 import oracle.sql.json.OracleJsonValue;
 
@@ -377,16 +377,12 @@ class BsonVsOsonClientSideTest {
         return totalNanos / MEASUREMENT_ITERATIONS;
     }
 
-    private Object navigateToField(RawBsonDocument doc, String[] path) {
-        Object current = doc;
+    private BsonValue navigateToField(RawBsonDocument doc, String[] path) {
+        BsonValue current = doc;
         for (String part : path) {
-            if (current instanceof RawBsonDocument) {
-                current = ((RawBsonDocument) current).get(part);
-            } else if (current instanceof Document) {
-                current = ((Document) current).get(part);
-            } else {
-                return null;
-            }
+            if (!current.isDocument()) return null;
+            current = current.asDocument().get(part);
+            if (current == null) return null;
         }
         return current;
     }

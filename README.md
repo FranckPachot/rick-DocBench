@@ -1,12 +1,10 @@
 # DocBench
 
-**Extensible Database Document Performance Benchmarking Framework**
+**BSON vs OSON Client-Side Field Access Benchmark**
 
-DocBench measures document database performance with emphasis on **overhead decomposition**—isolating the distinct cost components that comprise total request latency beyond raw data access time.
+DocBench demonstrates the O(n) vs O(1) algorithmic complexity difference between MongoDB's BSON and Oracle's OSON binary JSON formats for client-side field access.
 
 ## The O(n) vs O(1) Problem
-
-Traditional benchmarks measure aggregate throughput but fail to show **where time is actually spent**. DocBench specifically measures the algorithmic complexity difference in binary JSON formats:
 
 | Format | Traversal Strategy | Complexity |
 |--------|-------------------|------------|
@@ -53,7 +51,8 @@ O(n) Scaling: Position 1 -> 1000 = BSON time increased 77.8x
 | **Nested depth 3** | Access `level1.level2.level3.value` | Multi-level path traversal |
 | **Nested depth 5** | Access 5-level nested path | Deep nesting compounds O(n) cost |
 
-**Key Findings:**
+### Key Findings
+
 - **BSON** (`RawBsonDocument.get`): O(n) sequential scanning—time increases with field position
 - **OSON** (`OracleJsonObject.get`): O(1) hash lookup—constant ~60-150ns regardless of position
 - At position 1000, OSON is **519x faster** than BSON
@@ -62,27 +61,9 @@ O(n) Scaling: Position 1 -> 1000 = BSON time increased 77.8x
 
 ### Prerequisites
 
-- Java 21+ (Java 23 recommended)
-- Gradle 8.5+
-- Docker (for integration tests)
+- Java 21+
 - MongoDB 7.0+
 - Oracle Database 23ai Free
-
-### Build & Test
-
-```bash
-# Build
-./gradlew build
-
-# Unit tests
-./gradlew test
-
-# Integration tests (requires MongoDB and Oracle)
-./gradlew integrationTest
-
-# Run client-side O(n) vs O(1) benchmark
-./gradlew integrationTest --tests "*.BsonVsOsonClientSideTest"
-```
 
 ### Configuration
 
@@ -90,8 +71,8 @@ Create `config/local.properties`:
 
 ```properties
 # MongoDB
-mongodb.uri=mongodb://user:pass@localhost:27017/docbench
-mongodb.database=docbench
+mongodb.uri=mongodb://user:pass@localhost:27017/testdb
+mongodb.database=testdb
 
 # Oracle 23ai
 oracle.url=jdbc:oracle:thin:@localhost:1521/FREEPDB1
@@ -99,88 +80,31 @@ oracle.username=docbench
 oracle.password=your_password
 ```
 
-### CLI Usage
+### Run Benchmarks
 
 ```bash
-# List available workloads and adapters
-./gradlew run --args="list --verbose"
+# Run all benchmarks
+./gradlew integrationTest
 
-# Run specific workload
-./gradlew run --args="run -w traverse -a mongodb --iterations 1000"
+# Run BSON vs OSON comparison only
+./gradlew integrationTest --tests "*.BsonVsOsonClientSideTest"
 
-# Dry run validation
-./gradlew run --args="run --all-workloads -a mongodb -a oracle-oson --dry-run"
+# Run BSON O(n) scaling test only
+./gradlew integrationTest --tests "*.ClientSideAccessScalingTest"
 ```
 
-## Architecture
+## How It Works
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         DocBench CLI                            │
-│   [Command Parser] [Config Loader] [Report Generator]          │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────┐
-│                    Benchmark Orchestrator                       │
-│   [Workload Registry] [Execution Engine] [Metrics Collector]    │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────┐
-│                  Database Adapter Layer (SPI)                   │
-│  ┌────────────────┐  ┌─────────────────┐  ┌──────────────────┐ │
-│  │ MongoDBAdapter │  │OracleOSONAdapter│  │ [Future Adapters]│ │
-│  │  BSON O(n)     │  │  SQL/JSON O(1)  │  │  PostgreSQL, etc │ │
-│  └────────────────┘  └─────────────────┘  └──────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-```
+The benchmark uses:
+- **MongoDB**: `RawBsonDocument.get()` - parses raw BSON bytes on each access (O(n))
+- **Oracle**: `OracleJsonObject.get()` - native OSON with hash-indexed lookup (O(1))
 
-## Key Features
+Both tests:
+1. Fetch the full document once (network cost excluded from measurement)
+2. Access a specific field 100,000 times
+3. Measure only the client-side field access time
 
-- **Overhead Decomposition**: Breaks down latency into connection, serialization, traversal, network, and deserialization components
-- **Binary JSON Comparison**: Compares BSON O(n) traversal vs OSON O(1) hash-indexed navigation
-- **Extensible Architecture**: Plugin-based adapter system for adding database platforms
-- **Reproducible Results**: Seeded random generation and deterministic document structures
-- **Statistical Rigor**: HdrHistogram-based percentile tracking
-
-## Metrics
-
-| Metric | Description |
-|--------|-------------|
-| `total_latency` | End-to-end operation time |
-| `server_execution_time` | DB-reported execution |
-| `client_deserialization_time` | Response parsing (client) |
-| `serialization_time` | Request preparation |
-| `overhead_ratio` | (total - server_fetch) / total |
-
-## Project Structure
-
-```
-com.docbench
-├── cli/          # Command-line interface (picocli)
-├── config/       # Configuration management
-├── orchestrator/ # Benchmark execution
-├── workload/     # Workload definitions
-├── metrics/      # Measurement and collection
-├── adapter/      # Database adapter SPI
-│   ├── spi/      # Core interfaces
-│   ├── mongodb/  # MongoDB/BSON implementation
-│   └── oracle/   # Oracle SQL/JSON implementation
-├── document/     # Test document generation
-├── report/       # Output generation
-└── util/         # Utilities (TimeSource, RandomSource)
-```
-
-## Development
-
-This project follows **Test-Driven Development** practices with 238 unit tests and 48 integration tests.
-
-```bash
-# Run all tests
-./gradlew test integrationTest
-
-# Mutation testing
-./gradlew pitest
-```
+This isolates the **format-level** parsing cost, demonstrating why OSON's hash-indexed structure outperforms BSON's sequential layout.
 
 ## License
 

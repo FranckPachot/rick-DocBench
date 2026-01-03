@@ -85,38 +85,52 @@ The `UpdateEfficiencyTest` compares full update cycles (decode → modify → en
 UPDATE CYCLE TESTS:
 Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
 --------------------------------------------------------------------------------
-Update cycle pos 1/100                  14025        11144      1.26x OSON
-Update cycle pos 50/100                 10824        10260      1.05x OSON
-Update cycle pos 100/100                11055         9969      1.11x OSON
-Update cycle pos 500/500                51975        62094      0.84x BSON
+Update cycle pos 1/100                  13553        10429      1.30x OSON
+Update cycle pos 50/100                 11263        10212      1.10x OSON
+Update cycle pos 100/100                11732        10429      1.12x OSON
+Update cycle pos 500/500                53912        58362      0.92x BSON
 
 NESTED UPDATE TESTS:
 Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
 --------------------------------------------------------------------------------
-Nested update depth 1                    3075         3080      1.00x BSON
-Nested update depth 3                    5252         3474      1.51x OSON
-Nested update depth 5                    6787         4568      1.49x OSON
+Nested update depth 1                    2769         2909      0.95x BSON
+Nested update depth 3                    4899         3545      1.38x OSON
+Nested update depth 5                    6725         4812      1.40x OSON
 
 VARIABLE SIZE UPDATE TESTS:
 Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
 --------------------------------------------------------------------------------
-Size change: same size (100→100)        21400        19071      1.12x OSON
-Size change: shrink (100→1)             20697        18420      1.12x OSON
-Size change: grow (100→500)             21292        19211      1.11x OSON
-Size change: grow 10x (100→1000)        21504        18971      1.13x OSON
+Size change: same size (100→100)        21192        18874      1.12x OSON
+Size change: shrink (100→1)             20871        19666      1.06x OSON
+Size change: grow (100→500)             21171        20486      1.03x OSON
+Size change: grow 10x (100→1000)        22406        19021      1.18x OSON
+
+FIELD INSERTION TESTS:
+Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
+--------------------------------------------------------------------------------
+Insert at beginning                     13244        11890      1.11x OSON
+Insert at middle                        12381        11529      1.07x OSON
+Insert at end                           13732        11329      1.21x OSON
+
+ARRAY GROWTH TESTS:
+Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
+--------------------------------------------------------------------------------
+Array growth: add 1 element             13661        13761      0.99x BSON
+Array growth: add 10 elements           11971        11687      1.02x OSON
+Array growth: add 100 elements          14227        15914      0.89x BSON
 
 --------------------------------------------------------------------------------
-OVERALL                               187886       180262      1.04x OSON
+OVERALL                               268546       256935      1.05x OSON
 ================================================================================
 ```
 
 **Key Findings:**
-- OSON is **1.04x faster** overall for update operations
-- For nested updates at depth 3+, OSON is **1.5x faster** due to O(1) navigation
-- Variable size updates show **no significant overhead** for either format
-- BSON: Immutable `RawBsonDocument` requires full decode → `BsonDocument` → modify → re-encode
-- OSON: `OracleJsonObject` supports mutable operations with O(1) field access
-- The dominant cost is serialization, which masks any offset recalculation overhead
+- OSON is **1.05x faster** overall for update operations (13 wins vs 4)
+- For nested updates at depth 3+, OSON is **1.4x faster** due to O(1) navigation
+- Field insertion position has **no significant impact** - full document rebuild dominates
+- Array growth slightly favors BSON due to efficient `BsonArray.add()` operations
+- Variable size updates show **no measurable offset recalculation overhead**
+- Both formats require full decode → modify → encode cycles, masking structural differences
 
 ## Quick Start
 

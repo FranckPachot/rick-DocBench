@@ -4,7 +4,9 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import org.bson.BsonArray;
 import org.bson.BsonDocument;
+import org.bson.BsonInt32;
 import org.bson.BsonString;
 import org.bson.BsonValue;
 import org.bson.Document;
@@ -571,6 +573,318 @@ class UpdateEfficiencyTest {
         }
 
         return totalNanos / MEASUREMENT_ITERATIONS;
+    }
+
+    // =========================================================================
+    // Test 4: Field Insertion (forces offset recalculation for subsequent fields)
+    // =========================================================================
+
+    @Test
+    @Order(30)
+    @DisplayName("Field insertion - at beginning")
+    void fieldInsertion_beginning() throws SQLException {
+        testFieldInsertion("ins-begin", 0, "insert at beginning");
+    }
+
+    @Test
+    @Order(31)
+    @DisplayName("Field insertion - at middle")
+    void fieldInsertion_middle() throws SQLException {
+        testFieldInsertion("ins-mid", 50, "insert at middle");
+    }
+
+    @Test
+    @Order(32)
+    @DisplayName("Field insertion - at end")
+    void fieldInsertion_end() throws SQLException {
+        testFieldInsertion("ins-end", 100, "insert at end");
+    }
+
+    private void testFieldInsertion(String testId, int insertPosition, String description) throws SQLException {
+        int totalFields = 100;
+
+        // Create document with 100 fields
+        Document mongoDoc = new Document("_id", testId);
+        StringBuilder oracleJson = new StringBuilder("{");
+        for (int i = 1; i <= totalFields; i++) {
+            String fieldName = "field_" + String.format("%04d", i);
+            String value = "value_" + i;
+            mongoDoc.append(fieldName, value);
+            if (i > 1) oracleJson.append(",");
+            oracleJson.append("\"").append(fieldName).append("\":\"").append(value).append("\"");
+        }
+        oracleJson.append("}");
+
+        docCollection.insertOne(mongoDoc);
+        try (PreparedStatement ps = oracleConnection.prepareStatement(
+                "INSERT INTO " + ORACLE_TABLE + " (id, doc) VALUES (?, ?)")) {
+            ps.setString(1, testId);
+            ps.setString(2, oracleJson.toString());
+            ps.executeUpdate();
+        }
+
+        // Measure BSON field insertion
+        long bsonNanos = measureBsonFieldInsertion(testId, insertPosition);
+
+        // Measure OSON field insertion
+        long osonNanos = measureOsonFieldInsertion(testId, insertPosition);
+
+        String desc = "Insert field: " + description;
+        results.put(testId, new TestResult(testId, desc, bsonNanos, osonNanos, "insertion"));
+
+        System.out.printf("  %-30s: BSON=%8d ns, OSON=%8d ns, Ratio=%6.2fx%n",
+                desc, bsonNanos, osonNanos,
+                (double) bsonNanos / Math.max(1, osonNanos));
+    }
+
+    private long measureBsonFieldInsertion(String docId, int insertPosition) {
+        RawBsonDocument raw = rawCollection.find(new Document("_id", docId)).first();
+        if (raw == null) throw new RuntimeException("Document not found: " + docId);
+
+        String newFieldName = "new_field_" + String.format("%04d", insertPosition);
+
+        // Warmup
+        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+            BsonDocument decoded = raw.decode(BSON_CODEC);
+            // Insert new field - BsonDocument maintains insertion order
+            BsonDocument reordered = new BsonDocument();
+            int fieldIndex = 0;
+            for (Map.Entry<String, BsonValue> entry : decoded.entrySet()) {
+                if (fieldIndex == insertPosition) {
+                    reordered.put(newFieldName, new BsonString("inserted_value_" + i));
+                }
+                reordered.put(entry.getKey(), entry.getValue());
+                fieldIndex++;
+            }
+            if (insertPosition >= fieldIndex) {
+                reordered.put(newFieldName, new BsonString("inserted_value_" + i));
+            }
+            new RawBsonDocument(reordered, BSON_CODEC);
+        }
+
+        // Measure
+        long totalNanos = 0;
+        for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
+            long start = System.nanoTime();
+            BsonDocument decoded = raw.decode(BSON_CODEC);
+            BsonDocument reordered = new BsonDocument();
+            int fieldIndex = 0;
+            for (Map.Entry<String, BsonValue> entry : decoded.entrySet()) {
+                if (fieldIndex == insertPosition) {
+                    reordered.put(newFieldName, new BsonString("inserted_value_" + i));
+                }
+                reordered.put(entry.getKey(), entry.getValue());
+                fieldIndex++;
+            }
+            if (insertPosition >= fieldIndex) {
+                reordered.put(newFieldName, new BsonString("inserted_value_" + i));
+            }
+            new RawBsonDocument(reordered, BSON_CODEC);
+            totalNanos += System.nanoTime() - start;
+        }
+
+        return totalNanos / MEASUREMENT_ITERATIONS;
+    }
+
+    private long measureOsonFieldInsertion(String docId, int insertPosition) throws SQLException {
+        OracleJsonObject original = fetchOracleJsonObject(docId);
+
+        String newFieldName = "new_field_" + String.format("%04d", insertPosition);
+
+        // Warmup
+        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+            OracleJsonObject mutable = insertFieldAtPosition(original, newFieldName,
+                    jsonFactory.createString("inserted_value_" + i), insertPosition);
+            serializeOsonToBytes(mutable);
+        }
+
+        // Measure
+        long totalNanos = 0;
+        for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
+            long start = System.nanoTime();
+            OracleJsonObject mutable = insertFieldAtPosition(original, newFieldName,
+                    jsonFactory.createString("inserted_value_" + i), insertPosition);
+            serializeOsonToBytes(mutable);
+            totalNanos += System.nanoTime() - start;
+        }
+
+        return totalNanos / MEASUREMENT_ITERATIONS;
+    }
+
+    private OracleJsonObject insertFieldAtPosition(OracleJsonObject source, String newField,
+                                                    OracleJsonValue newValue, int position) {
+        OracleJsonObject result = jsonFactory.createObject();
+        int index = 0;
+        for (String key : source.keySet()) {
+            if (index == position) {
+                result.put(newField, newValue);
+            }
+            OracleJsonValue value = source.get(key);
+            if (value.getOracleJsonType() == OracleJsonValue.OracleJsonType.OBJECT) {
+                result.put(key, deepCopyObject(value.asJsonObject()));
+            } else {
+                result.put(key, value);
+            }
+            index++;
+        }
+        if (position >= index) {
+            result.put(newField, newValue);
+        }
+        return result;
+    }
+
+    // =========================================================================
+    // Test 5: Array Growth (adding elements expands array, shifts subsequent offsets)
+    // =========================================================================
+
+    @Test
+    @Order(40)
+    @DisplayName("Array growth - add 1 element")
+    void arrayGrowth_add1() throws SQLException {
+        testArrayGrowth("arr-1", 1, "add 1 element");
+    }
+
+    @Test
+    @Order(41)
+    @DisplayName("Array growth - add 10 elements")
+    void arrayGrowth_add10() throws SQLException {
+        testArrayGrowth("arr-10", 10, "add 10 elements");
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("Array growth - add 100 elements")
+    void arrayGrowth_add100() throws SQLException {
+        testArrayGrowth("arr-100", 100, "add 100 elements");
+    }
+
+    private void testArrayGrowth(String testId, int elementsToAdd, String description) throws SQLException {
+        // Create document with array in the middle (fields before and after)
+        Document mongoDoc = new Document("_id", testId);
+        StringBuilder oracleJson = new StringBuilder("{");
+
+        // Add 50 fields before array
+        for (int i = 1; i <= 50; i++) {
+            String fieldName = "before_" + String.format("%04d", i);
+            mongoDoc.append(fieldName, "value_" + i);
+            oracleJson.append("\"").append(fieldName).append("\":\"value_").append(i).append("\",");
+        }
+
+        // Add array with 10 initial elements
+        List<Integer> initialArray = new ArrayList<>();
+        oracleJson.append("\"data_array\":[");
+        for (int i = 0; i < 10; i++) {
+            initialArray.add(i);
+            if (i > 0) oracleJson.append(",");
+            oracleJson.append(i);
+        }
+        oracleJson.append("],");
+        mongoDoc.append("data_array", initialArray);
+
+        // Add 50 fields after array
+        for (int i = 1; i <= 50; i++) {
+            String fieldName = "after_" + String.format("%04d", i);
+            mongoDoc.append(fieldName, "value_" + i);
+            if (i > 1) oracleJson.append(",");
+            oracleJson.append("\"").append(fieldName).append("\":\"value_").append(i).append("\"");
+        }
+        oracleJson.append("}");
+
+        docCollection.insertOne(mongoDoc);
+        try (PreparedStatement ps = oracleConnection.prepareStatement(
+                "INSERT INTO " + ORACLE_TABLE + " (id, doc) VALUES (?, ?)")) {
+            ps.setString(1, testId);
+            ps.setString(2, oracleJson.toString());
+            ps.executeUpdate();
+        }
+
+        // Measure BSON array growth
+        long bsonNanos = measureBsonArrayGrowth(testId, elementsToAdd);
+
+        // Measure OSON array growth
+        long osonNanos = measureOsonArrayGrowth(testId, elementsToAdd);
+
+        String desc = "Array growth: " + description;
+        results.put(testId, new TestResult(testId, desc, bsonNanos, osonNanos, "array"));
+
+        System.out.printf("  %-30s: BSON=%8d ns, OSON=%8d ns, Ratio=%6.2fx%n",
+                desc, bsonNanos, osonNanos,
+                (double) bsonNanos / Math.max(1, osonNanos));
+    }
+
+    private long measureBsonArrayGrowth(String docId, int elementsToAdd) {
+        RawBsonDocument raw = rawCollection.find(new Document("_id", docId)).first();
+        if (raw == null) throw new RuntimeException("Document not found: " + docId);
+
+        // Warmup
+        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+            BsonDocument decoded = raw.decode(BSON_CODEC);
+            BsonArray array = decoded.getArray("data_array");
+            for (int j = 0; j < elementsToAdd; j++) {
+                array.add(new BsonInt32(1000 + j));
+            }
+            new RawBsonDocument(decoded, BSON_CODEC);
+        }
+
+        // Measure
+        long totalNanos = 0;
+        for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
+            long start = System.nanoTime();
+            BsonDocument decoded = raw.decode(BSON_CODEC);
+            BsonArray array = decoded.getArray("data_array");
+            for (int j = 0; j < elementsToAdd; j++) {
+                array.add(new BsonInt32(1000 + j));
+            }
+            new RawBsonDocument(decoded, BSON_CODEC);
+            totalNanos += System.nanoTime() - start;
+        }
+
+        return totalNanos / MEASUREMENT_ITERATIONS;
+    }
+
+    private long measureOsonArrayGrowth(String docId, int elementsToAdd) throws SQLException {
+        OracleJsonObject original = fetchOracleJsonObject(docId);
+
+        // Warmup
+        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+            OracleJsonObject mutable = copyToMutableWithArrayGrowth(original, "data_array", elementsToAdd);
+            serializeOsonToBytes(mutable);
+        }
+
+        // Measure
+        long totalNanos = 0;
+        for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
+            long start = System.nanoTime();
+            OracleJsonObject mutable = copyToMutableWithArrayGrowth(original, "data_array", elementsToAdd);
+            serializeOsonToBytes(mutable);
+            totalNanos += System.nanoTime() - start;
+        }
+
+        return totalNanos / MEASUREMENT_ITERATIONS;
+    }
+
+    private OracleJsonObject copyToMutableWithArrayGrowth(OracleJsonObject source, String arrayField, int elementsToAdd) {
+        OracleJsonObject mutable = jsonFactory.createObject();
+        for (String key : source.keySet()) {
+            OracleJsonValue value = source.get(key);
+            if (key.equals(arrayField) && value.getOracleJsonType() == OracleJsonValue.OracleJsonType.ARRAY) {
+                // Copy array and add new elements
+                oracle.sql.json.OracleJsonArray srcArray = value.asJsonArray();
+                oracle.sql.json.OracleJsonArray newArray = jsonFactory.createArray();
+                for (int i = 0; i < srcArray.size(); i++) {
+                    newArray.add(srcArray.get(i));
+                }
+                for (int i = 0; i < elementsToAdd; i++) {
+                    newArray.add(jsonFactory.createDecimal(1000 + i));
+                }
+                mutable.put(key, newArray);
+            } else if (value.getOracleJsonType() == OracleJsonValue.OracleJsonType.OBJECT) {
+                mutable.put(key, deepCopyObject(value.asJsonObject()));
+            } else {
+                mutable.put(key, value);
+            }
+        }
+        return mutable;
     }
 
     // =========================================================================

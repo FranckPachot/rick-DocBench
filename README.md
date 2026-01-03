@@ -23,18 +23,18 @@ Client-side field access comparison (100K iterations, network overhead eliminate
 ================================================================================
 Test Case                       BSON (ns)    OSON (ns)      Ratio
 --------------------------------------------------------------------------------
-Position 1/100                        380          101      3.76x OSON
-Position 50/100                      1964           87     22.57x OSON
-Position 100/100                     3238           56     57.82x OSON
-Position 500/500                    15903          129    123.28x OSON
-Position 1000/1000                  32169           75    428.92x OSON
-Nested depth 1                        613          114      5.38x OSON
-Nested depth 3                       1361          115     11.83x OSON
-Nested depth 5                       2135          162     13.18x OSON
+Position 1/100                        282          102      2.76x OSON
+Position 50/100                      2423          113     21.44x OSON
+Position 100/100                     3034           51     59.49x OSON
+Position 500/500                    14881          101    147.34x OSON
+Position 1000/1000                  28819           71    405.90x OSON
+Nested depth 1                        599          121      4.95x OSON
+Nested depth 3                       1312          128     10.25x OSON
+Nested depth 5                       2033          182     11.17x OSON
 --------------------------------------------------------------------------------
-TOTAL                               57763          839     68.85x OSON
+TOTAL                               53383          869     61.43x OSON
 
-O(n) Scaling: Position 1 -> 1000 = BSON time increased 84.66x
+O(n) Scaling: Position 1 -> 1000 = BSON time increased 102.20x
 ================================================================================
 ```
 
@@ -54,9 +54,9 @@ O(n) Scaling: Position 1 -> 1000 = BSON time increased 84.66x
 ### Key Findings
 
 - **BSON** (`RawBsonDocument.get`): O(n) sequential scanning—time increases with field position
-- **OSON** (`OracleJsonObject.get`): O(1) hash lookup—constant ~60-130ns regardless of position
-- At position 1000, OSON is **429x faster** than BSON
-- Overall, OSON is **68.85x faster** for client-side field access
+- **OSON** (`OracleJsonObject.get`): O(1) hash lookup—constant ~50-180ns regardless of position
+- At position 1000, OSON is **406x faster** than BSON
+- Overall, OSON is **61.43x faster** for client-side field access
 
 ### BSON O(n) Scaling Proof
 
@@ -66,13 +66,48 @@ The `ClientSideAccessScalingTest` isolates BSON behavior:
 RawBsonDocument.get() - Sequential BSON parsing:
 Position        Time (ns)  Ratio to P1
 ----------------------------------------
-1                     167        1.00x
-100                  3185       19.07x
-500                 16176       96.86x
-999                 32673      195.65x
+1                     173        1.00x
+100                  2881       16.65x
+500                 14610       84.45x
+999                 28626      165.47x
 ```
 
-This confirms O(n) complexity: accessing position 999 takes **196x longer** than position 1.
+This confirms O(n) complexity: accessing position 999 takes **165x longer** than position 1.
+
+### Update Efficiency Benchmark
+
+The `UpdateEfficiencyTest` compares full update cycles (decode → modify → encode):
+
+```
+================================================================================
+  BSON vs OSON UPDATE EFFICIENCY
+================================================================================
+UPDATE CYCLE TESTS:
+Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
+--------------------------------------------------------------------------------
+Update cycle pos 1/100                  12054        13147      0.92x BSON
+Update cycle pos 50/100                 11873        11312      1.05x OSON
+Update cycle pos 100/100                10982        10377      1.06x OSON
+Update cycle pos 500/500                54259        62997      0.86x BSON
+
+NESTED UPDATE TESTS:
+Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
+--------------------------------------------------------------------------------
+Nested update depth 1                    2828         3317      0.85x BSON
+Nested update depth 3                    4754         3555      1.34x OSON
+Nested update depth 5                    7513         4953      1.52x OSON
+
+--------------------------------------------------------------------------------
+OVERALL                               104477       110073      0.95x BSON
+================================================================================
+```
+
+**Key Findings:**
+- Update efficiency is **roughly equal** between BSON and OSON (~1:1 ratio)
+- For nested updates at depth 3+, OSON is **1.3-1.5x faster**
+- BSON: Immutable `RawBsonDocument` requires full decode → `BsonDocument` → modify → re-encode
+- OSON: `OracleJsonObject` supports mutable operations with O(1) field access
+- The dominant cost is serialization, not field location
 
 ## Quick Start
 
@@ -103,11 +138,14 @@ oracle.password=your_password
 # Run all benchmarks
 ./gradlew integrationTest
 
-# Run BSON vs OSON comparison only
+# Run BSON vs OSON field access comparison
 ./gradlew integrationTest --tests "*.BsonVsOsonClientSideTest"
 
-# Run BSON O(n) scaling test only
+# Run BSON O(n) scaling test
 ./gradlew integrationTest --tests "*.ClientSideAccessScalingTest"
+
+# Run update efficiency comparison
+./gradlew integrationTest --tests "*.UpdateEfficiencyTest"
 ```
 
 ## How It Works

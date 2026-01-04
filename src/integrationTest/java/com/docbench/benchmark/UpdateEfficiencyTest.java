@@ -240,18 +240,18 @@ class UpdateEfficiencyTest {
         if (raw == null) throw new RuntimeException("Document not found: " + docId);
 
         // Warmup: full decode → modify → encode cycle
-        // Alternate value size each iteration to force offset recalculation
+        // Alternate value size each iteration (16-byte difference) to force offset recalculation
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + " ";
+            String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + "                ";  // 16 spaces
             BsonDocument decoded = raw.decode(BSON_CODEC);
             decoded.put(fieldName, new BsonString(value));
             new RawBsonDocument(decoded, BSON_CODEC);
         }
 
-        // Measure full cycle with alternating value sizes
+        // Measure full cycle with alternating value sizes (16-byte difference)
         long totalNanos = 0;
         for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
-            String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + " ";
+            String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + "                ";  // 16 spaces
             long start = System.nanoTime();
             // 1. Decode
             BsonDocument decoded = raw.decode(BSON_CODEC);
@@ -270,18 +270,18 @@ class UpdateEfficiencyTest {
         OracleJsonObject original = fetchOracleJsonObject(docId);
 
         // Warmup: create mutable copy → modify → serialize
-        // Alternate value size each iteration
+        // Alternate value size each iteration (16-byte difference)
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + " ";
+            String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + "                ";  // 16 spaces
             OracleJsonObject mutable = copyToMutable(original);
             mutable.put(fieldName, jsonFactory.createString(value));
             serializeOsonToBytes(mutable);
         }
 
-        // Measure full cycle with alternating value sizes
+        // Measure full cycle with alternating value sizes (16-byte difference)
         long totalNanos = 0;
         for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
-            String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + " ";
+            String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + "                ";  // 16 spaces
             long start = System.nanoTime();
             // 1. Create mutable copy
             OracleJsonObject mutable = copyToMutable(original);

@@ -76,52 +76,52 @@ This confirms O(n) complexity: accessing position 999 takes **165x longer** than
 
 ### Update Efficiency Benchmark
 
-The `UpdateEfficiencyTest` measures modify + encode cost (decode isolated outside timing):
+The `UpdateEfficiencyTest` compares full update cycles (decode → modify → encode):
 
 ```
 ================================================================================
-  BSON vs OSON UPDATE EFFICIENCY (modify + encode only)
+  BSON vs OSON UPDATE EFFICIENCY
 ================================================================================
 UPDATE CYCLE TESTS (with alternating ±16 byte value sizes):
 Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
 --------------------------------------------------------------------------------
-Update cycle pos 1/100                   5716         5748      0.99x BSON
-Update cycle pos 50/100                  4249         5510      0.77x BSON
-Update cycle pos 100/100                 4384         4882      0.90x BSON
-Update cycle pos 500/500                21866        29540      0.74x BSON
+Update cycle pos 1/100                  14896        12974      1.15x OSON
+Update cycle pos 50/100                 12404        10527      1.18x OSON
+Update cycle pos 100/100                12477        11290      1.11x OSON
+Update cycle pos 500/500                61003        59790      1.02x OSON
 
 NESTED UPDATE TESTS:
 Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
 --------------------------------------------------------------------------------
-Nested update depth 1                    3534         2859      1.24x OSON
-Nested update depth 3                    4682         3511      1.33x OSON
-Nested update depth 5                    6511         5275      1.23x OSON
+Nested update depth 1                    2825         3048      0.93x BSON
+Nested update depth 3                    5141         3579      1.44x OSON
+Nested update depth 5                    6732         4854      1.39x OSON
 
 FIELD INSERTION TESTS:
 Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
 --------------------------------------------------------------------------------
-Insert at beginning                     12317        11231      1.10x OSON
-Insert at middle                        12199        11123      1.10x OSON
-Insert at end                           11873        11378      1.04x OSON
+Insert at beginning                     12721        11325      1.12x OSON
+Insert at middle                        12722        10994      1.16x OSON
+Insert at end                           14723        11011      1.34x OSON
 
 ARRAY GROWTH TESTS:
 Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
 --------------------------------------------------------------------------------
-Array growth: add 1 element             11914        12895      0.92x BSON
-Array growth: add 10 elements           12060        11722      1.03x OSON
-Array growth: add 100 elements          14011        15105      0.93x BSON
+Array growth: add 1 element             13648        11605      1.18x OSON
+Array growth: add 10 elements           14070        11791      1.19x OSON
+Array growth: add 100 elements          14350        15236      0.94x BSON
 
 --------------------------------------------------------------------------------
-OVERALL                               125316       130779      0.96x BSON
+OVERALL                               197712       178024      1.11x OSON
 ================================================================================
 ```
 
 **Key Findings:**
-- Update efficiency is **roughly equal** (BSON 6 wins, OSON 7 wins)
-- Update cycles alternate value sizes by ±16 bytes to force offset recalculation
-- For nested updates, OSON is **1.2-1.3x faster** due to O(1) navigation
-- Field insertion shows OSON **1.04-1.10x faster**
-- BSON encoding is faster for flat documents; OSON excels at nested structures
+- OSON is **1.11x faster** overall for update operations (11 wins vs 2)
+- Update cycles alternate value sizes by ±16 bytes each iteration to force offset recalculation
+- For nested updates at depth 3+, OSON is **1.4x faster** due to O(1) navigation
+- Field insertion shows OSON **1.1-1.3x faster** regardless of position
+- Both formats require full decode → modify → encode cycles
 
 ## Quick Start
 

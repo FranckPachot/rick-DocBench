@@ -239,28 +239,26 @@ class UpdateEfficiencyTest {
         RawBsonDocument raw = rawCollection.find(new Document("_id", docId)).first();
         if (raw == null) throw new RuntimeException("Document not found: " + docId);
 
-        // Decode once outside timing loop
-        BsonDocument template = raw.decode(BSON_CODEC);
-
-        // Warmup: modify → encode cycle (decode excluded)
+        // Warmup: full decode → modify → encode cycle
         // Alternate value size each iteration (16-byte difference) to force offset recalculation
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + "                ";  // 16 spaces
-            BsonDocument copy = template.clone();
-            copy.put(fieldName, new BsonString(value));
-            new RawBsonDocument(copy, BSON_CODEC);
+            BsonDocument decoded = raw.decode(BSON_CODEC);
+            decoded.put(fieldName, new BsonString(value));
+            new RawBsonDocument(decoded, BSON_CODEC);
         }
 
-        // Measure modify + encode only (decode excluded from timing)
+        // Measure full cycle with alternating value sizes (16-byte difference)
         long totalNanos = 0;
         for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
             String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + "                ";  // 16 spaces
-            BsonDocument copy = template.clone();
             long start = System.nanoTime();
-            // 1. Modify (alternating size forces offset recalculation)
-            copy.put(fieldName, new BsonString(value));
-            // 2. Encode
-            new RawBsonDocument(copy, BSON_CODEC);
+            // 1. Decode
+            BsonDocument decoded = raw.decode(BSON_CODEC);
+            // 2. Modify (alternating size forces offset recalculation)
+            decoded.put(fieldName, new BsonString(value));
+            // 3. Encode
+            new RawBsonDocument(decoded, BSON_CODEC);
             totalNanos += System.nanoTime() - start;
         }
 
@@ -280,15 +278,16 @@ class UpdateEfficiencyTest {
             serializeOsonToBytes(mutable);
         }
 
-        // Measure modify + encode only (copy is analogous to BSON clone)
+        // Measure full cycle with alternating value sizes (16-byte difference)
         long totalNanos = 0;
         for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
             String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + "                ";  // 16 spaces
-            OracleJsonObject mutable = copyToMutable(original);
             long start = System.nanoTime();
-            // 1. Modify (alternating size)
+            // 1. Create mutable copy
+            OracleJsonObject mutable = copyToMutable(original);
+            // 2. Modify (alternating size)
             mutable.put(fieldName, jsonFactory.createString(value));
-            // 2. Serialize
+            // 3. Serialize
             serializeOsonToBytes(mutable);
             totalNanos += System.nanoTime() - start;
         }

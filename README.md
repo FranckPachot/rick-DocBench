@@ -82,54 +82,45 @@ The `UpdateEfficiencyTest` compares full update cycles (decode → modify → en
 ================================================================================
   BSON vs OSON UPDATE EFFICIENCY
 ================================================================================
-UPDATE CYCLE TESTS:
+UPDATE CYCLE TESTS (with alternating value sizes):
 Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
 --------------------------------------------------------------------------------
-Update cycle pos 1/100                  13553        10429      1.30x OSON
-Update cycle pos 50/100                 11263        10212      1.10x OSON
-Update cycle pos 100/100                11732        10429      1.12x OSON
-Update cycle pos 500/500                53912        58362      0.92x BSON
+Update cycle pos 1/100                  11541        12503      0.92x BSON
+Update cycle pos 50/100                 11372        11015      1.03x OSON
+Update cycle pos 100/100                11363        11365      1.00x BSON
+Update cycle pos 500/500                54040        59936      0.90x BSON
 
 NESTED UPDATE TESTS:
 Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
 --------------------------------------------------------------------------------
-Nested update depth 1                    2769         2909      0.95x BSON
-Nested update depth 3                    4899         3545      1.38x OSON
-Nested update depth 5                    6725         4812      1.40x OSON
-
-VARIABLE SIZE UPDATE TESTS:
-Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
---------------------------------------------------------------------------------
-Size change: same size (100→100)        21192        18874      1.12x OSON
-Size change: shrink (100→1)             20871        19666      1.06x OSON
-Size change: grow (100→500)             21171        20486      1.03x OSON
-Size change: grow 10x (100→1000)        22406        19021      1.18x OSON
+Nested update depth 1                    2767         3008      0.92x BSON
+Nested update depth 3                    4641         3705      1.25x OSON
+Nested update depth 5                    7009         5526      1.27x OSON
 
 FIELD INSERTION TESTS:
 Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
 --------------------------------------------------------------------------------
-Insert at beginning                     13244        11890      1.11x OSON
-Insert at middle                        12381        11529      1.07x OSON
-Insert at end                           13732        11329      1.21x OSON
+Insert at beginning                     12667        11753      1.08x OSON
+Insert at middle                        12733        11148      1.14x OSON
+Insert at end                           12413        11060      1.12x OSON
 
 ARRAY GROWTH TESTS:
 Test Case                           BSON (ns)    OSON (ns)      Ratio Winner
 --------------------------------------------------------------------------------
-Array growth: add 1 element             13661        13761      0.99x BSON
-Array growth: add 10 elements           11971        11687      1.02x OSON
-Array growth: add 100 elements          14227        15914      0.89x BSON
+Array growth: add 1 element             13833        12029      1.15x OSON
+Array growth: add 10 elements           12483        12414      1.01x OSON
+Array growth: add 100 elements          14838        15579      0.95x BSON
 
 --------------------------------------------------------------------------------
-OVERALL                               268546       256935      1.05x OSON
+OVERALL                               181700       181041      1.00x (tie)
 ================================================================================
 ```
 
 **Key Findings:**
-- OSON is **1.05x faster** overall for update operations (13 wins vs 4)
-- For nested updates at depth 3+, OSON is **1.4x faster** due to O(1) navigation
+- Update efficiency is **roughly equal** between BSON and OSON (~1:1 ratio)
+- Update cycles alternate value sizes each iteration to force offset recalculation
+- For nested updates at depth 3+, OSON is **1.25x faster** due to O(1) navigation
 - Field insertion position has **no significant impact** - full document rebuild dominates
-- Array growth slightly favors BSON due to efficient `BsonArray.add()` operations
-- Variable size updates show **no measurable offset recalculation overhead**
 - Both formats require full decode → modify → encode cycles, masking structural differences
 
 ## Quick Start

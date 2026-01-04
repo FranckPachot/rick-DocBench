@@ -240,20 +240,23 @@ class UpdateEfficiencyTest {
         if (raw == null) throw new RuntimeException("Document not found: " + docId);
 
         // Warmup: full decode → modify → encode cycle
+        // Alternate value size each iteration to force offset recalculation
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+            String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + " ";
             BsonDocument decoded = raw.decode(BSON_CODEC);
-            decoded.put(fieldName, new BsonString("updated_" + i));
+            decoded.put(fieldName, new BsonString(value));
             new RawBsonDocument(decoded, BSON_CODEC);
         }
 
-        // Measure full cycle
+        // Measure full cycle with alternating value sizes
         long totalNanos = 0;
         for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
+            String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + " ";
             long start = System.nanoTime();
             // 1. Decode
             BsonDocument decoded = raw.decode(BSON_CODEC);
-            // 2. Modify
-            decoded.put(fieldName, new BsonString("updated_" + i));
+            // 2. Modify (alternating size forces offset recalculation)
+            decoded.put(fieldName, new BsonString(value));
             // 3. Encode
             new RawBsonDocument(decoded, BSON_CODEC);
             totalNanos += System.nanoTime() - start;
@@ -267,20 +270,23 @@ class UpdateEfficiencyTest {
         OracleJsonObject original = fetchOracleJsonObject(docId);
 
         // Warmup: create mutable copy → modify → serialize
+        // Alternate value size each iteration
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+            String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + " ";
             OracleJsonObject mutable = copyToMutable(original);
-            mutable.put(fieldName, jsonFactory.createString("updated_" + i));
+            mutable.put(fieldName, jsonFactory.createString(value));
             serializeOsonToBytes(mutable);
         }
 
-        // Measure full cycle
+        // Measure full cycle with alternating value sizes
         long totalNanos = 0;
         for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
+            String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + " ";
             long start = System.nanoTime();
             // 1. Create mutable copy
             OracleJsonObject mutable = copyToMutable(original);
-            // 2. Modify
-            mutable.put(fieldName, jsonFactory.createString("updated_" + i));
+            // 2. Modify (alternating size)
+            mutable.put(fieldName, jsonFactory.createString(value));
             // 3. Serialize
             serializeOsonToBytes(mutable);
             totalNanos += System.nanoTime() - start;
@@ -451,150 +457,25 @@ class UpdateEfficiencyTest {
     }
 
     // =========================================================================
-    // Test 3: Variable Size Updates (value size changes)
+    // Test 3: Field Insertion (forces offset recalculation for subsequent fields)
     // =========================================================================
-    // When field values change size, BSON must recalculate all subsequent
-    // field offsets during re-serialization. This tests the overhead.
-
-    private static final String ORIGINAL_VALUE = "A".repeat(100);  // 100 chars
-    private static final String SMALLER_VALUE = "X";               // 1 char
-    private static final String LARGER_VALUE = "B".repeat(500);    // 500 chars
-    private static final String SAME_SIZE_VALUE = "C".repeat(100); // 100 chars
 
     @Test
     @Order(20)
-    @DisplayName("Variable size - same size update")
-    void variableSize_sameSize() throws SQLException {
-        testVariableSizeUpdate("var-same", SAME_SIZE_VALUE, "same size (100→100)");
-    }
-
-    @Test
-    @Order(21)
-    @DisplayName("Variable size - shrink update")
-    void variableSize_shrink() throws SQLException {
-        testVariableSizeUpdate("var-shrink", SMALLER_VALUE, "shrink (100→1)");
-    }
-
-    @Test
-    @Order(22)
-    @DisplayName("Variable size - grow update")
-    void variableSize_grow() throws SQLException {
-        testVariableSizeUpdate("var-grow", LARGER_VALUE, "grow (100→500)");
-    }
-
-    @Test
-    @Order(23)
-    @DisplayName("Variable size - grow 10x")
-    void variableSize_grow10x() throws SQLException {
-        String largeValue = "D".repeat(1000);  // 1000 chars (10x original)
-        testVariableSizeUpdate("var-grow10x", largeValue, "grow 10x (100→1000)");
-    }
-
-    private void testVariableSizeUpdate(String testId, String newValue, String description) throws SQLException {
-        int totalFields = 100;
-        int targetPosition = 50;  // Middle field - maximizes offset recalculation
-        String targetField = "field_" + String.format("%04d", targetPosition);
-
-        // Create document with 100-char values
-        Document mongoDoc = new Document("_id", testId);
-        StringBuilder oracleJson = new StringBuilder("{");
-        for (int i = 1; i <= totalFields; i++) {
-            String fieldName = "field_" + String.format("%04d", i);
-            mongoDoc.append(fieldName, ORIGINAL_VALUE);
-            if (i > 1) oracleJson.append(",");
-            oracleJson.append("\"").append(fieldName).append("\":\"").append(ORIGINAL_VALUE).append("\"");
-        }
-        oracleJson.append("}");
-
-        docCollection.insertOne(mongoDoc);
-        try (PreparedStatement ps = oracleConnection.prepareStatement(
-                "INSERT INTO " + ORACLE_TABLE + " (id, doc) VALUES (?, ?)")) {
-            ps.setString(1, testId);
-            ps.setString(2, oracleJson.toString());
-            ps.executeUpdate();
-        }
-
-        // Measure BSON variable size update
-        long bsonNanos = measureBsonVariableSizeUpdate(testId, targetField, newValue);
-
-        // Measure OSON variable size update
-        long osonNanos = measureOsonVariableSizeUpdate(testId, targetField, newValue);
-
-        String desc = "Size change: " + description;
-        results.put(testId, new TestResult(testId, desc, bsonNanos, osonNanos, "varsize"));
-
-        System.out.printf("  %-30s: BSON=%8d ns, OSON=%8d ns, Ratio=%6.2fx%n",
-                desc, bsonNanos, osonNanos,
-                (double) bsonNanos / Math.max(1, osonNanos));
-    }
-
-    private long measureBsonVariableSizeUpdate(String docId, String fieldName, String newValue) {
-        RawBsonDocument raw = rawCollection.find(new Document("_id", docId)).first();
-        if (raw == null) throw new RuntimeException("Document not found: " + docId);
-
-        // Warmup
-        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            BsonDocument decoded = raw.decode(BSON_CODEC);
-            decoded.put(fieldName, new BsonString(newValue));
-            new RawBsonDocument(decoded, BSON_CODEC);
-        }
-
-        // Measure
-        long totalNanos = 0;
-        for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
-            long start = System.nanoTime();
-            BsonDocument decoded = raw.decode(BSON_CODEC);
-            decoded.put(fieldName, new BsonString(newValue));
-            new RawBsonDocument(decoded, BSON_CODEC);
-            totalNanos += System.nanoTime() - start;
-        }
-
-        return totalNanos / MEASUREMENT_ITERATIONS;
-    }
-
-    private long measureOsonVariableSizeUpdate(String docId, String fieldName, String newValue) throws SQLException {
-        OracleJsonObject original = fetchOracleJsonObject(docId);
-
-        // Warmup
-        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            OracleJsonObject mutable = copyToMutable(original);
-            mutable.put(fieldName, jsonFactory.createString(newValue));
-            serializeOsonToBytes(mutable);
-        }
-
-        // Measure
-        long totalNanos = 0;
-        for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
-            long start = System.nanoTime();
-            OracleJsonObject mutable = copyToMutable(original);
-            mutable.put(fieldName, jsonFactory.createString(newValue));
-            serializeOsonToBytes(mutable);
-            totalNanos += System.nanoTime() - start;
-        }
-
-        return totalNanos / MEASUREMENT_ITERATIONS;
-    }
-
-    // =========================================================================
-    // Test 4: Field Insertion (forces offset recalculation for subsequent fields)
-    // =========================================================================
-
-    @Test
-    @Order(30)
     @DisplayName("Field insertion - at beginning")
     void fieldInsertion_beginning() throws SQLException {
         testFieldInsertion("ins-begin", 0, "insert at beginning");
     }
 
     @Test
-    @Order(31)
+    @Order(21)
     @DisplayName("Field insertion - at middle")
     void fieldInsertion_middle() throws SQLException {
         testFieldInsertion("ins-mid", 50, "insert at middle");
     }
 
     @Test
-    @Order(32)
+    @Order(22)
     @DisplayName("Field insertion - at end")
     void fieldInsertion_end() throws SQLException {
         testFieldInsertion("ins-end", 100, "insert at end");
@@ -734,25 +615,25 @@ class UpdateEfficiencyTest {
     }
 
     // =========================================================================
-    // Test 5: Array Growth (adding elements expands array, shifts subsequent offsets)
+    // Test 4: Array Growth (adding elements expands array, shifts subsequent offsets)
     // =========================================================================
 
     @Test
-    @Order(40)
+    @Order(30)
     @DisplayName("Array growth - add 1 element")
     void arrayGrowth_add1() throws SQLException {
         testArrayGrowth("arr-1", 1, "add 1 element");
     }
 
     @Test
-    @Order(41)
+    @Order(31)
     @DisplayName("Array growth - add 10 elements")
     void arrayGrowth_add10() throws SQLException {
         testArrayGrowth("arr-10", 10, "add 10 elements");
     }
 
     @Test
-    @Order(42)
+    @Order(32)
     @DisplayName("Array growth - add 100 elements")
     void arrayGrowth_add100() throws SQLException {
         testArrayGrowth("arr-100", 100, "add 100 elements");

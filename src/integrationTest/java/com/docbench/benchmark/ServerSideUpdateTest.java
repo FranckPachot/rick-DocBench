@@ -466,99 +466,122 @@ class ServerSideUpdateTest {
     }
 
     // =========================================================================
-    // Test 4: Array Updates (push/append operations)
+    // Test 4: Array Scalar Push (simple string values)
     // =========================================================================
 
     @Test
     @Order(30)
-    @DisplayName("Array incremental push - 1 element per iteration")
-    void arrayPush_singleElement() throws SQLException {
-        testArrayPush("array-push-1", 1);
+    @DisplayName("Scalar array push - 1 element")
+    void scalarArrayPush_1() throws SQLException {
+        testScalarArrayPush("scalar-push-1", 1);
     }
 
     @Test
     @Order(31)
-    @DisplayName("Array incremental push - 10 elements per iteration")
-    void arrayPush_10elements() throws SQLException {
-        testArrayPush("array-push-10", 10);
+    @DisplayName("Scalar array push - 10 elements")
+    void scalarArrayPush_10() throws SQLException {
+        testScalarArrayPush("scalar-push-10", 10);
     }
 
-    @Test
-    @Order(32)
-    @DisplayName("Array incremental push - 100 elements per iteration")
-    void arrayPush_100elements() throws SQLException {
-        testArrayPush("array-push-100", 100);
-    }
-
-    private void testArrayPush(String testId, int elementsPerIteration) throws SQLException {
-        // Use separate document IDs for MongoDB and Oracle to avoid cross-contamination
+    private void testScalarArrayPush(String testId, int elementsPerIteration) throws SQLException {
         String mongoDocId = testId + "-mongo";
         String oracleDocId = testId + "-oracle";
 
-        // Create fresh documents for MongoDB test
-        createDocumentWithArray(mongoDocId, 10);
-        long mongoNanos = measureMongoPush(mongoDocId, elementsPerIteration);
+        createDocumentWithScalarArray(mongoDocId, 10);
+        long mongoNanos = measureMongoScalarPush(mongoDocId, elementsPerIteration);
         cleanupTestDocument(mongoDocId);
 
-        // Create fresh documents for Oracle test
-        createDocumentWithArray(oracleDocId, 10);
-        long oracleNanos = measureOraclePush(oracleDocId, elementsPerIteration);
+        createDocumentWithScalarArray(oracleDocId, 10);
+        long oracleNanos = measureOracleScalarPush(oracleDocId, elementsPerIteration);
         cleanupTestDocument(oracleDocId);
 
-        String description = "Array push " + elementsPerIteration + "x1 elem";
-        results.put(testId, new TestResult(testId, description, mongoNanos, oracleNanos, "array"));
+        String description = "Scalar push " + elementsPerIteration + "x1";
+        results.put(testId, new TestResult(testId, description, mongoNanos, oracleNanos, "array-scalar"));
 
         double ratio = (double) oracleNanos / Math.max(1, mongoNanos);
         String winner = ratio > 1.0 ? "MongoDB" : "OSON";
         System.out.printf("  %-35s: MongoDB=%8d ns, OSON=%8d ns, %6.2fx %s%n",
                 description, mongoNanos, oracleNanos, ratio, winner);
-
-        // Cleanup
-        cleanupTestDocument(testId);
     }
 
     // =========================================================================
-    // Test 5: Array Element Delete Operations
+    // Test 5: Array Complex Object Push (nested documents)
+    // =========================================================================
+
+    @Test
+    @Order(35)
+    @DisplayName("Object array push - 1 element")
+    void objectArrayPush_1() throws SQLException {
+        testObjectArrayPush("object-push-1", 1);
+    }
+
+    @Test
+    @Order(36)
+    @DisplayName("Object array push - 10 elements")
+    void objectArrayPush_10() throws SQLException {
+        testObjectArrayPush("object-push-10", 10);
+    }
+
+    private void testObjectArrayPush(String testId, int elementsPerIteration) throws SQLException {
+        String mongoDocId = testId + "-mongo";
+        String oracleDocId = testId + "-oracle";
+
+        createDocumentWithObjectArray(mongoDocId, 10);
+        long mongoNanos = measureMongoObjectPush(mongoDocId, elementsPerIteration);
+        cleanupTestDocument(mongoDocId);
+
+        createDocumentWithObjectArray(oracleDocId, 10);
+        long oracleNanos = measureOracleObjectPush(oracleDocId, elementsPerIteration);
+        cleanupTestDocument(oracleDocId);
+
+        String description = "Object push " + elementsPerIteration + "x1";
+        results.put(testId, new TestResult(testId, description, mongoNanos, oracleNanos, "array-object"));
+
+        double ratio = (double) oracleNanos / Math.max(1, mongoNanos);
+        String winner = ratio > 1.0 ? "MongoDB" : "OSON";
+        System.out.printf("  %-35s: MongoDB=%8d ns, OSON=%8d ns, %6.2fx %s%n",
+                description, mongoNanos, oracleNanos, ratio, winner);
+    }
+
+    // =========================================================================
+    // Test 6: Array Scalar Delete
     // =========================================================================
 
     @Test
     @Order(40)
-    @DisplayName("Array delete - from beginning")
-    void arrayDelete_beginning() throws SQLException {
-        testArrayDelete("array-delete-begin", "beginning");
+    @DisplayName("Scalar array delete - beginning")
+    void scalarArrayDelete_beginning() throws SQLException {
+        testScalarArrayDelete("scalar-del-begin", "beginning");
     }
 
     @Test
     @Order(41)
-    @DisplayName("Array delete - from middle")
-    void arrayDelete_middle() throws SQLException {
-        testArrayDelete("array-delete-middle", "middle");
+    @DisplayName("Scalar array delete - middle")
+    void scalarArrayDelete_middle() throws SQLException {
+        testScalarArrayDelete("scalar-del-middle", "middle");
     }
 
     @Test
     @Order(42)
-    @DisplayName("Array delete - from end")
-    void arrayDelete_end() throws SQLException {
-        testArrayDelete("array-delete-end", "end");
+    @DisplayName("Scalar array delete - end")
+    void scalarArrayDelete_end() throws SQLException {
+        testScalarArrayDelete("scalar-del-end", "end");
     }
 
-    private void testArrayDelete(String testId, String position) throws SQLException {
-        // Use separate document IDs for MongoDB and Oracle
+    private void testScalarArrayDelete(String testId, String position) throws SQLException {
         String mongoDocId = testId + "-mongo";
         String oracleDocId = testId + "-oracle";
 
-        // Create fresh documents for MongoDB test (100 elements to delete from)
-        createDocumentWithArray(mongoDocId, 100);
-        long mongoNanos = measureMongoDelete(mongoDocId, position);
+        createDocumentWithScalarArray(mongoDocId, 100);
+        long mongoNanos = measureMongoScalarDelete(mongoDocId, position);
         cleanupTestDocument(mongoDocId);
 
-        // Create fresh documents for Oracle test
-        createDocumentWithArray(oracleDocId, 100);
-        long oracleNanos = measureOracleDelete(oracleDocId, position);
+        createDocumentWithScalarArray(oracleDocId, 100);
+        long oracleNanos = measureOracleScalarDelete(oracleDocId, position);
         cleanupTestDocument(oracleDocId);
 
-        String description = "Array delete " + position;
-        results.put(testId, new TestResult(testId, description, mongoNanos, oracleNanos, "array"));
+        String description = "Scalar delete " + position;
+        results.put(testId, new TestResult(testId, description, mongoNanos, oracleNanos, "array-scalar"));
 
         double ratio = (double) oracleNanos / Math.max(1, mongoNanos);
         String winner = ratio > 1.0 ? "MongoDB" : "OSON";
@@ -566,95 +589,57 @@ class ServerSideUpdateTest {
                 description, mongoNanos, oracleNanos, ratio, winner);
     }
 
-    private long measureMongoDelete(String docId, String position) {
-        // MongoDB $pop: -1 removes first, 1 removes last
-        // For middle, we use $unset with positional and then $pull to clean up
-        Bson update;
-        switch (position) {
-            case "beginning" -> update = Updates.popFirst("items");
-            case "end" -> update = Updates.popLast("items");
-            default -> update = Updates.popFirst("items"); // middle will use special handling
-        }
+    // =========================================================================
+    // Test 7: Array Complex Object Delete
+    // =========================================================================
 
-        // Warmup
-        for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
-            // Re-add element to keep array size stable for fair comparison
-            if (position.equals("middle")) {
-                // For middle delete: remove at index 50, then re-add
-                mongoCollection.updateOne(eq("_id", docId), Updates.unset("items.50"));
-                mongoCollection.updateOne(eq("_id", docId), Updates.pull("items", null));
-                mongoCollection.updateOne(eq("_id", docId), Updates.push("items", "item_replaced_" + i));
-            } else {
-                mongoCollection.updateOne(eq("_id", docId), update);
-                mongoCollection.updateOne(eq("_id", docId), Updates.push("items", "item_replaced_" + i));
-            }
-        }
-
-        // Measure
-        long totalNanos = 0;
-        for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
-            long start = System.nanoTime();
-            if (position.equals("middle")) {
-                mongoCollection.updateOne(eq("_id", docId), Updates.unset("items.50"));
-                mongoCollection.updateOne(eq("_id", docId), Updates.pull("items", null));
-            } else {
-                mongoCollection.updateOne(eq("_id", docId), update);
-            }
-            totalNanos += System.nanoTime() - start;
-
-            // Re-add element to keep array size stable
-            mongoCollection.updateOne(eq("_id", docId), Updates.push("items", "item_replaced_" + i));
-        }
-
-        return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
+    @Test
+    @Order(45)
+    @DisplayName("Object array delete - beginning")
+    void objectArrayDelete_beginning() throws SQLException {
+        testObjectArrayDelete("object-del-begin", "beginning");
     }
 
-    private long measureOracleDelete(String docId, String position) throws SQLException {
-        // Oracle JSON_TRANSFORM REMOVE with array index
-        // $.items[0] for first, $.items[last] for last, $.items[50] for middle
-        String jsonPath = switch (position) {
-            case "beginning" -> "$.items[0]";
-            case "end" -> "$.items[last]";
-            default -> "$.items[50]"; // middle
-        };
-
-        String deleteSql = "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, REMOVE '" + jsonPath + "') WHERE id = ?";
-        String appendSql = "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, APPEND '$.items' = ?) WHERE id = ?";
-
-        try (PreparedStatement deletePs = oracleConnection.prepareStatement(deleteSql);
-             PreparedStatement appendPs = oracleConnection.prepareStatement(appendSql)) {
-
-            // Warmup
-            for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
-                deletePs.setString(1, docId);
-                deletePs.executeUpdate();
-
-                // Re-add element to keep array size stable
-                appendPs.setString(1, "item_replaced_" + i);
-                appendPs.setString(2, docId);
-                appendPs.executeUpdate();
-            }
-
-            // Measure
-            long totalNanos = 0;
-            for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
-                deletePs.setString(1, docId);
-                long start = System.nanoTime();
-                deletePs.executeUpdate();
-                totalNanos += System.nanoTime() - start;
-
-                // Re-add element to keep array size stable
-                appendPs.setString(1, "item_replaced_" + i);
-                appendPs.setString(2, docId);
-                appendPs.executeUpdate();
-            }
-
-            return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
-        }
+    @Test
+    @Order(46)
+    @DisplayName("Object array delete - middle")
+    void objectArrayDelete_middle() throws SQLException {
+        testObjectArrayDelete("object-del-middle", "middle");
     }
 
-    private void createDocumentWithArray(String testId, int initialArraySize) throws SQLException {
-        // Build initial array
+    @Test
+    @Order(47)
+    @DisplayName("Object array delete - end")
+    void objectArrayDelete_end() throws SQLException {
+        testObjectArrayDelete("object-del-end", "end");
+    }
+
+    private void testObjectArrayDelete(String testId, String position) throws SQLException {
+        String mongoDocId = testId + "-mongo";
+        String oracleDocId = testId + "-oracle";
+
+        createDocumentWithObjectArray(mongoDocId, 100);
+        long mongoNanos = measureMongoObjectDelete(mongoDocId, position);
+        cleanupTestDocument(mongoDocId);
+
+        createDocumentWithObjectArray(oracleDocId, 100);
+        long oracleNanos = measureOracleObjectDelete(oracleDocId, position);
+        cleanupTestDocument(oracleDocId);
+
+        String description = "Object delete " + position;
+        results.put(testId, new TestResult(testId, description, mongoNanos, oracleNanos, "array-object"));
+
+        double ratio = (double) oracleNanos / Math.max(1, mongoNanos);
+        String winner = ratio > 1.0 ? "MongoDB" : "OSON";
+        System.out.printf("  %-35s: MongoDB=%8d ns, OSON=%8d ns, %6.2fx %s%n",
+                description, mongoNanos, oracleNanos, ratio, winner);
+    }
+
+    // =========================================================================
+    // Scalar Array Helper Methods
+    // =========================================================================
+
+    private void createDocumentWithScalarArray(String testId, int initialArraySize) throws SQLException {
         List<String> initialArray = new ArrayList<>();
         StringBuilder oracleArray = new StringBuilder("[");
         for (int i = 0; i < initialArraySize; i++) {
@@ -679,9 +664,7 @@ class ServerSideUpdateTest {
         }
     }
 
-    private long measureMongoPush(String docId, int elementsPerIteration) {
-        // Incremental push: each element pushed one at a time
-        // Warmup - push elements one at a time
+    private long measureMongoScalarPush(String docId, int elementsPerIteration) {
         for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
             for (int j = 0; j < elementsPerIteration; j++) {
                 String value = (i % 2 == 0) ? "new_item_" + i + "_" + j : "new_item_" + i + "_" + j + "        ";
@@ -689,7 +672,6 @@ class ServerSideUpdateTest {
             }
         }
 
-        // Measure - push elements one at a time
         long totalNanos = 0;
         for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
             long start = System.nanoTime();
@@ -703,29 +685,24 @@ class ServerSideUpdateTest {
         return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
     }
 
-    private long measureOraclePush(String docId, int elementsPerIteration) throws SQLException {
-        // Incremental push: each element pushed one at a time using APPEND
+    private long measureOracleScalarPush(String docId, int elementsPerIteration) throws SQLException {
         String sql = "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, APPEND '$.items' = ?) WHERE id = ?";
 
         try (PreparedStatement ps = oracleConnection.prepareStatement(sql)) {
-            // Warmup - push elements one at a time
             for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
                 for (int j = 0; j < elementsPerIteration; j++) {
                     String value = (i % 2 == 0) ? "new_item_" + i + "_" + j : "new_item_" + i + "_" + j + "        ";
-                    // Oracle team: use ps.setString for scalar values
                     ps.setString(1, value);
                     ps.setString(2, docId);
                     ps.executeUpdate();
                 }
             }
 
-            // Measure - push elements one at a time
             long totalNanos = 0;
             for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
                 long start = System.nanoTime();
                 for (int j = 0; j < elementsPerIteration; j++) {
                     String value = (i % 2 == 0) ? "new_item_" + i + "_" + j : "new_item_" + i + "_" + j + "        ";
-                    // Oracle team: use ps.setString for scalar values
                     ps.setString(1, value);
                     ps.setString(2, docId);
                     ps.executeUpdate();
@@ -736,6 +713,281 @@ class ServerSideUpdateTest {
             return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
         }
     }
+
+    private long measureMongoScalarDelete(String docId, String position) {
+        Bson update = switch (position) {
+            case "beginning" -> Updates.popFirst("items");
+            case "end" -> Updates.popLast("items");
+            default -> Updates.popFirst("items");
+        };
+
+        for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
+            if (position.equals("middle")) {
+                mongoCollection.updateOne(eq("_id", docId), Updates.unset("items.50"));
+                mongoCollection.updateOne(eq("_id", docId), Updates.pull("items", null));
+                mongoCollection.updateOne(eq("_id", docId), Updates.push("items", "item_replaced_" + i));
+            } else {
+                mongoCollection.updateOne(eq("_id", docId), update);
+                mongoCollection.updateOne(eq("_id", docId), Updates.push("items", "item_replaced_" + i));
+            }
+        }
+
+        long totalNanos = 0;
+        for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
+            long start = System.nanoTime();
+            if (position.equals("middle")) {
+                mongoCollection.updateOne(eq("_id", docId), Updates.unset("items.50"));
+                mongoCollection.updateOne(eq("_id", docId), Updates.pull("items", null));
+            } else {
+                mongoCollection.updateOne(eq("_id", docId), update);
+            }
+            totalNanos += System.nanoTime() - start;
+            mongoCollection.updateOne(eq("_id", docId), Updates.push("items", "item_replaced_" + i));
+        }
+
+        return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
+    }
+
+    private long measureOracleScalarDelete(String docId, String position) throws SQLException {
+        String jsonPath = switch (position) {
+            case "beginning" -> "$.items[0]";
+            case "end" -> "$.items[last]";
+            default -> "$.items[50]";
+        };
+
+        String deleteSql = "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, REMOVE '" + jsonPath + "') WHERE id = ?";
+        String appendSql = "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, APPEND '$.items' = ?) WHERE id = ?";
+
+        try (PreparedStatement deletePs = oracleConnection.prepareStatement(deleteSql);
+             PreparedStatement appendPs = oracleConnection.prepareStatement(appendSql)) {
+
+            for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
+                deletePs.setString(1, docId);
+                deletePs.executeUpdate();
+                appendPs.setString(1, "item_replaced_" + i);
+                appendPs.setString(2, docId);
+                appendPs.executeUpdate();
+            }
+
+            long totalNanos = 0;
+            for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
+                deletePs.setString(1, docId);
+                long start = System.nanoTime();
+                deletePs.executeUpdate();
+                totalNanos += System.nanoTime() - start;
+                appendPs.setString(1, "item_replaced_" + i);
+                appendPs.setString(2, docId);
+                appendPs.executeUpdate();
+            }
+
+            return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
+        }
+    }
+
+    // =========================================================================
+    // Complex Object Array Helper Methods
+    // =========================================================================
+
+    private void createDocumentWithObjectArray(String testId, int initialArraySize) throws SQLException {
+        List<Document> initialArray = new ArrayList<>();
+        StringBuilder oracleArray = new StringBuilder("[");
+        for (int i = 0; i < initialArraySize; i++) {
+            // Create complex object with nested fields
+            Document obj = new Document()
+                    .append("id", i)
+                    .append("name", "item_" + i)
+                    .append("metadata", new Document()
+                            .append("created", "2024-01-01")
+                            .append("tags", List.of("tag1", "tag2", "tag3"))
+                            .append("priority", i % 5));
+            initialArray.add(obj);
+
+            if (i > 0) oracleArray.append(",");
+            oracleArray.append("{\"id\":").append(i)
+                    .append(",\"name\":\"item_").append(i).append("\"")
+                    .append(",\"metadata\":{\"created\":\"2024-01-01\",\"tags\":[\"tag1\",\"tag2\",\"tag3\"],\"priority\":")
+                    .append(i % 5).append("}}");
+        }
+        oracleArray.append("]");
+
+        Document mongoDoc = new Document("_id", testId)
+                .append("items", initialArray)
+                .append("counter", 0);
+
+        String oracleJson = "{\"_id\":\"" + testId + "\",\"items\":" + oracleArray + ",\"counter\":0}";
+
+        mongoCollection.insertOne(mongoDoc);
+        try (PreparedStatement ps = oracleConnection.prepareStatement(
+                "INSERT INTO " + ORACLE_TABLE + " (id, doc) VALUES (?, ?)")) {
+            ps.setString(1, testId);
+            ps.setString(2, oracleJson);
+            ps.executeUpdate();
+        }
+    }
+
+    private long measureMongoObjectPush(String docId, int elementsPerIteration) {
+        for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
+            for (int j = 0; j < elementsPerIteration; j++) {
+                Document obj = new Document()
+                        .append("id", 1000 + i * 100 + j)
+                        .append("name", "new_item_" + i + "_" + j)
+                        .append("metadata", new Document()
+                                .append("created", "2024-01-02")
+                                .append("tags", List.of("new", "dynamic"))
+                                .append("priority", (i + j) % 5));
+                mongoCollection.updateOne(eq("_id", docId), Updates.push("items", obj));
+            }
+        }
+
+        long totalNanos = 0;
+        for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
+            long start = System.nanoTime();
+            for (int j = 0; j < elementsPerIteration; j++) {
+                Document obj = new Document()
+                        .append("id", 1000 + i * 100 + j)
+                        .append("name", "new_item_" + i + "_" + j)
+                        .append("metadata", new Document()
+                                .append("created", "2024-01-02")
+                                .append("tags", List.of("new", "dynamic"))
+                                .append("priority", (i + j) % 5));
+                mongoCollection.updateOne(eq("_id", docId), Updates.push("items", obj));
+            }
+            totalNanos += System.nanoTime() - start;
+        }
+
+        return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
+    }
+
+    private long measureOracleObjectPush(String docId, int elementsPerIteration) throws SQLException {
+        String sql = "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, APPEND '$.items' = JSON(?)) WHERE id = ?";
+
+        try (PreparedStatement ps = oracleConnection.prepareStatement(sql)) {
+            for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
+                for (int j = 0; j < elementsPerIteration; j++) {
+                    String objJson = "{\"id\":" + (1000 + i * 100 + j) +
+                            ",\"name\":\"new_item_" + i + "_" + j + "\"" +
+                            ",\"metadata\":{\"created\":\"2024-01-02\",\"tags\":[\"new\",\"dynamic\"],\"priority\":" +
+                            ((i + j) % 5) + "}}";
+                    ps.setString(1, objJson);
+                    ps.setString(2, docId);
+                    ps.executeUpdate();
+                }
+            }
+
+            long totalNanos = 0;
+            for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
+                long start = System.nanoTime();
+                for (int j = 0; j < elementsPerIteration; j++) {
+                    String objJson = "{\"id\":" + (1000 + i * 100 + j) +
+                            ",\"name\":\"new_item_" + i + "_" + j + "\"" +
+                            ",\"metadata\":{\"created\":\"2024-01-02\",\"tags\":[\"new\",\"dynamic\"],\"priority\":" +
+                            ((i + j) % 5) + "}}";
+                    ps.setString(1, objJson);
+                    ps.setString(2, docId);
+                    ps.executeUpdate();
+                }
+                totalNanos += System.nanoTime() - start;
+            }
+
+            return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
+        }
+    }
+
+    private long measureMongoObjectDelete(String docId, String position) {
+        Bson update = switch (position) {
+            case "beginning" -> Updates.popFirst("items");
+            case "end" -> Updates.popLast("items");
+            default -> Updates.popFirst("items");
+        };
+
+        for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
+            if (position.equals("middle")) {
+                mongoCollection.updateOne(eq("_id", docId), Updates.unset("items.50"));
+                mongoCollection.updateOne(eq("_id", docId), Updates.pull("items", null));
+            } else {
+                mongoCollection.updateOne(eq("_id", docId), update);
+            }
+            // Re-add complex object
+            Document obj = new Document()
+                    .append("id", 2000 + i)
+                    .append("name", "replaced_" + i)
+                    .append("metadata", new Document()
+                            .append("created", "2024-01-03")
+                            .append("tags", List.of("replaced"))
+                            .append("priority", i % 5));
+            mongoCollection.updateOne(eq("_id", docId), Updates.push("items", obj));
+        }
+
+        long totalNanos = 0;
+        for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
+            long start = System.nanoTime();
+            if (position.equals("middle")) {
+                mongoCollection.updateOne(eq("_id", docId), Updates.unset("items.50"));
+                mongoCollection.updateOne(eq("_id", docId), Updates.pull("items", null));
+            } else {
+                mongoCollection.updateOne(eq("_id", docId), update);
+            }
+            totalNanos += System.nanoTime() - start;
+
+            Document obj = new Document()
+                    .append("id", 2000 + i)
+                    .append("name", "replaced_" + i)
+                    .append("metadata", new Document()
+                            .append("created", "2024-01-03")
+                            .append("tags", List.of("replaced"))
+                            .append("priority", i % 5));
+            mongoCollection.updateOne(eq("_id", docId), Updates.push("items", obj));
+        }
+
+        return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
+    }
+
+    private long measureOracleObjectDelete(String docId, String position) throws SQLException {
+        String jsonPath = switch (position) {
+            case "beginning" -> "$.items[0]";
+            case "end" -> "$.items[last]";
+            default -> "$.items[50]";
+        };
+
+        String deleteSql = "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, REMOVE '" + jsonPath + "') WHERE id = ?";
+        String appendSql = "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, APPEND '$.items' = JSON(?)) WHERE id = ?";
+
+        try (PreparedStatement deletePs = oracleConnection.prepareStatement(deleteSql);
+             PreparedStatement appendPs = oracleConnection.prepareStatement(appendSql)) {
+
+            for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
+                deletePs.setString(1, docId);
+                deletePs.executeUpdate();
+
+                String objJson = "{\"id\":" + (2000 + i) +
+                        ",\"name\":\"replaced_" + i + "\"" +
+                        ",\"metadata\":{\"created\":\"2024-01-03\",\"tags\":[\"replaced\"],\"priority\":" +
+                        (i % 5) + "}}";
+                appendPs.setString(1, objJson);
+                appendPs.setString(2, docId);
+                appendPs.executeUpdate();
+            }
+
+            long totalNanos = 0;
+            for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
+                deletePs.setString(1, docId);
+                long start = System.nanoTime();
+                deletePs.executeUpdate();
+                totalNanos += System.nanoTime() - start;
+
+                String objJson = "{\"id\":" + (2000 + i) +
+                        ",\"name\":\"replaced_" + i + "\"" +
+                        ",\"metadata\":{\"created\":\"2024-01-03\",\"tags\":[\"replaced\"],\"priority\":" +
+                        (i % 5) + "}}";
+                appendPs.setString(1, objJson);
+                appendPs.setString(2, docId);
+                appendPs.executeUpdate();
+            }
+
+            return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
+        }
+    }
+
 
     // =========================================================================
     // Helper Methods

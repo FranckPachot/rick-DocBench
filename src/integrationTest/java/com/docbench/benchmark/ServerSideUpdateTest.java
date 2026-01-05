@@ -420,6 +420,20 @@ class ServerSideUpdateTest {
         testLargeDocUpdate("large-100kb", 100 * 1024);
     }
 
+    @Test
+    @Order(23)
+    @DisplayName("Large doc update - 1MB document")
+    void largeDocUpdate_1mb() throws SQLException {
+        testLargeDocUpdate("large-1mb", 1024 * 1024);
+    }
+
+    @Test
+    @Order(24)
+    @DisplayName("Large doc update - 4MB document")
+    void largeDocUpdate_4mb() throws SQLException {
+        testLargeDocUpdate("large-4mb", 4 * 1024 * 1024);
+    }
+
     private void testLargeDocUpdate(String testId, int targetSizeBytes) throws SQLException {
         // Create large document with padding to reach target size
         int fieldCount = 50;
@@ -633,6 +647,151 @@ class ServerSideUpdateTest {
         String winner = ratio > 1.0 ? "MongoDB" : "OSON";
         System.out.printf("  %-35s: MongoDB=%8d ns, OSON=%8d ns, %6.2fx %s%n",
                 description, mongoNanos, oracleNanos, ratio, winner);
+    }
+
+    // =========================================================================
+    // Test 8: Large Document Array Operations (1MB and 4MB)
+    // =========================================================================
+
+    @Test
+    @Order(50)
+    @DisplayName("Large array update - 1MB scalar array")
+    void largeArrayUpdate_1mb_scalar() throws SQLException {
+        testLargeArrayUpdate("large-array-1mb-scalar", 1024 * 1024, false);
+    }
+
+    @Test
+    @Order(51)
+    @DisplayName("Large array update - 4MB scalar array")
+    void largeArrayUpdate_4mb_scalar() throws SQLException {
+        testLargeArrayUpdate("large-array-4mb-scalar", 4 * 1024 * 1024, false);
+    }
+
+    @Test
+    @Order(52)
+    @DisplayName("Large array update - 1MB object array")
+    void largeArrayUpdate_1mb_object() throws SQLException {
+        testLargeArrayUpdate("large-array-1mb-object", 1024 * 1024, true);
+    }
+
+    @Test
+    @Order(53)
+    @DisplayName("Large array update - 4MB object array")
+    void largeArrayUpdate_4mb_object() throws SQLException {
+        testLargeArrayUpdate("large-array-4mb-object", 4 * 1024 * 1024, true);
+    }
+
+    private void testLargeArrayUpdate(String testId, int targetSizeBytes, boolean useObjects) throws SQLException {
+        String mongoDocId = testId + "-mongo";
+        String oracleDocId = testId + "-oracle";
+
+        // Create large array documents
+        if (useObjects) {
+            createLargeObjectArrayDocument(mongoDocId, targetSizeBytes);
+            createLargeObjectArrayDocument(oracleDocId, targetSizeBytes);
+        } else {
+            createLargeScalarArrayDocument(mongoDocId, targetSizeBytes);
+            createLargeScalarArrayDocument(oracleDocId, targetSizeBytes);
+        }
+
+        // Measure single element push to large array
+        long mongoNanos, oracleNanos;
+        if (useObjects) {
+            mongoNanos = measureMongoObjectPush(mongoDocId, 1);
+            oracleNanos = measureOracleObjectPush(oracleDocId, 1);
+        } else {
+            mongoNanos = measureMongoScalarPush(mongoDocId, 1);
+            oracleNanos = measureOracleScalarPush(oracleDocId, 1);
+        }
+
+        cleanupTestDocument(mongoDocId);
+        cleanupTestDocument(oracleDocId);
+
+        String sizeLabel = targetSizeBytes >= 1024 * 1024
+                ? (targetSizeBytes / (1024 * 1024)) + "MB"
+                : (targetSizeBytes / 1024) + "KB";
+        String typeLabel = useObjects ? "object" : "scalar";
+        String description = "Large " + sizeLabel + " " + typeLabel + " array";
+        results.put(testId, new TestResult(testId, description, mongoNanos, oracleNanos, "large-array"));
+
+        double ratio = (double) oracleNanos / Math.max(1, mongoNanos);
+        String winner = ratio > 1.0 ? "MongoDB" : "OSON";
+        System.out.printf("  %-35s: MongoDB=%8d ns, OSON=%8d ns, %6.2fx %s%n",
+                description, mongoNanos, oracleNanos, ratio, winner);
+    }
+
+    private void createLargeScalarArrayDocument(String testId, int targetSizeBytes) throws SQLException {
+        // Calculate number of elements needed to reach target size
+        // Each scalar element is ~50 bytes on average
+        int avgElementSize = 50;
+        int elementCount = targetSizeBytes / avgElementSize;
+
+        List<String> initialArray = new ArrayList<>(elementCount);
+        StringBuilder oracleArray = new StringBuilder("[");
+
+        for (int i = 0; i < elementCount; i++) {
+            String value = "item_" + i + "_padding_" + String.format("%020d", i);
+            initialArray.add(value);
+            if (i > 0) oracleArray.append(",");
+            oracleArray.append("\"").append(value).append("\"");
+        }
+        oracleArray.append("]");
+
+        Document mongoDoc = new Document("_id", testId)
+                .append("items", initialArray)
+                .append("counter", 0);
+
+        String oracleJson = "{\"_id\":\"" + testId + "\",\"items\":" + oracleArray + ",\"counter\":0}";
+
+        mongoCollection.insertOne(mongoDoc);
+        try (PreparedStatement ps = oracleConnection.prepareStatement(
+                "INSERT INTO " + ORACLE_TABLE + " (id, doc) VALUES (?, ?)")) {
+            ps.setString(1, testId);
+            ps.setString(2, oracleJson);
+            ps.executeUpdate();
+        }
+    }
+
+    private void createLargeObjectArrayDocument(String testId, int targetSizeBytes) throws SQLException {
+        // Calculate number of elements needed to reach target size
+        // Each object element is ~150 bytes on average
+        int avgElementSize = 150;
+        int elementCount = targetSizeBytes / avgElementSize;
+
+        List<Document> initialArray = new ArrayList<>(elementCount);
+        StringBuilder oracleArray = new StringBuilder("[");
+
+        for (int i = 0; i < elementCount; i++) {
+            Document obj = new Document()
+                    .append("id", i)
+                    .append("name", "item_" + i)
+                    .append("metadata", new Document()
+                            .append("created", "2024-01-01")
+                            .append("tags", List.of("tag1", "tag2", "tag3"))
+                            .append("priority", i % 5));
+            initialArray.add(obj);
+
+            if (i > 0) oracleArray.append(",");
+            oracleArray.append("{\"id\":").append(i)
+                    .append(",\"name\":\"item_").append(i).append("\"")
+                    .append(",\"metadata\":{\"created\":\"2024-01-01\",\"tags\":[\"tag1\",\"tag2\",\"tag3\"],\"priority\":")
+                    .append(i % 5).append("}}");
+        }
+        oracleArray.append("]");
+
+        Document mongoDoc = new Document("_id", testId)
+                .append("items", initialArray)
+                .append("counter", 0);
+
+        String oracleJson = "{\"_id\":\"" + testId + "\",\"items\":" + oracleArray + ",\"counter\":0}";
+
+        mongoCollection.insertOne(mongoDoc);
+        try (PreparedStatement ps = oracleConnection.prepareStatement(
+                "INSERT INTO " + ORACLE_TABLE + " (id, doc) VALUES (?, ?)")) {
+            ps.setString(1, testId);
+            ps.setString(2, oracleJson);
+            ps.executeUpdate();
+        }
     }
 
     // =========================================================================

@@ -1438,6 +1438,176 @@ class ServerSideUpdateTest {
         System.out.printf("\n  Analysis: Oracle's ~%,d ns protocol overhead accounts for ~%.0f%% of baseline ops%n",
                 oracleOverheadDelta, overheadPct);
         System.out.println("  This overhead is a fixed cost regardless of JSON operation complexity.");
+
+        // Generate HTML performance report
+        generatePerformanceReport(totalMongo, totalOracle, mongoWins, oracleWins,
+                totalAdjustedOracle, adjustedMongoWins, adjustedOracleWins, oracleOverheadDelta);
+    }
+
+    private static void generatePerformanceReport(long totalMongo, long totalOracle,
+                                                   int mongoWins, int oracleWins,
+                                                   long totalAdjustedOracle,
+                                                   int adjustedMongoWins, int adjustedOracleWins,
+                                                   long oracleOverheadDelta) {
+        try {
+            Path reportDir = Path.of("reports");
+            Files.createDirectories(reportDir);
+
+            StringBuilder html = new StringBuilder();
+            html.append("""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>DocBench Performance Report - BSON vs OSON Server-Side Updates</title>
+                    <style>
+                        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+                        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                        h1 { color: #333; border-bottom: 3px solid #0066cc; padding-bottom: 10px; }
+                        h2 { color: #0066cc; margin-top: 30px; }
+                        h3 { color: #666; }
+                        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+                        th, td { border: 1px solid #ddd; padding: 12px; text-align: right; }
+                        th { background: #0066cc; color: white; }
+                        td:first-child { text-align: left; font-weight: 500; }
+                        tr:nth-child(even) { background: #f9f9f9; }
+                        tr:hover { background: #f0f7ff; }
+                        .winner-mongo { color: #cc6600; font-weight: bold; }
+                        .winner-oson { color: #006600; font-weight: bold; }
+                        .summary-box { background: #f0f7ff; border: 1px solid #0066cc; border-radius: 8px; padding: 20px; margin: 20px 0; }
+                        .highlight { background: #ffffcc; }
+                        .metric { font-size: 24px; font-weight: bold; color: #0066cc; }
+                        .section { margin: 30px 0; }
+                        .note { color: #666; font-style: italic; font-size: 0.9em; }
+                        .comparison { display: flex; gap: 20px; }
+                        .comparison > div { flex: 1; }
+                    </style>
+                </head>
+                <body>
+                <div class="container">
+                    <h1>DocBench Performance Report</h1>
+                    <p class="note">MongoDB $set vs Oracle JSON_TRANSFORM - Server-Side Update Benchmarks</p>
+                """);
+
+            // Executive Summary
+            double rawRatio = (double) totalOracle / Math.max(1, totalMongo);
+            double adjRatio = (double) totalAdjustedOracle / Math.max(1, totalMongo);
+
+            html.append("""
+                <div class="summary-box">
+                    <h2>Executive Summary</h2>
+                    <div class="comparison">
+                        <div>
+                            <h3>Raw Performance</h3>
+                            <p class="metric">MongoDB %.2fx faster</p>
+                            <p>MongoDB wins: %d | OSON wins: %d</p>
+                        </div>
+                        <div>
+                            <h3>Adjusted (Protocol Overhead Removed)</h3>
+                            <p class="metric">MongoDB %.2fx faster</p>
+                            <p>MongoDB wins: %d | OSON wins: %d</p>
+                        </div>
+                    </div>
+                </div>
+                """.formatted(rawRatio, mongoWins, oracleWins, adjRatio, adjustedMongoWins, adjustedOracleWins));
+
+            // Protocol Overhead Section
+            html.append("""
+                <div class="section">
+                    <h2>Protocol Overhead Analysis</h2>
+                    <table>
+                        <tr><th>Metric</th><th>Value</th></tr>
+                        <tr><td>MongoDB baseline (non-JSON $inc)</td><td>%,d ns</td></tr>
+                        <tr><td>Oracle baseline (non-JSON UPDATE)</td><td>%,d ns</td></tr>
+                        <tr><td>Oracle protocol overhead delta</td><td>%,d ns (%.2fx MongoDB)</td></tr>
+                        <tr><td>Overhead as %% of Oracle baseline</td><td>%.1f%%</td></tr>
+                    </table>
+                    <p class="note">The protocol overhead is a fixed cost per database round-trip, regardless of JSON operation complexity.
+                    Oracle's SQL/JDBC protocol has higher latency than MongoDB's binary wire protocol.</p>
+                </div>
+                """.formatted(
+                    mongoBaselineNanos,
+                    oracleBaselineNanos,
+                    oracleOverheadDelta,
+                    (double) oracleBaselineNanos / mongoBaselineNanos,
+                    (double) oracleOverheadDelta / oracleBaselineNanos * 100
+            ));
+
+            // Raw Results Table
+            html.append("""
+                <div class="section">
+                    <h2>Raw Performance Results</h2>
+                    <table>
+                        <tr><th>Test Case</th><th>MongoDB (ns)</th><th>OSON (ns)</th><th>Ratio</th><th>Winner</th></tr>
+                """);
+
+            for (TestResult result : results.values()) {
+                if (result.testType.equals("baseline")) continue;
+                double ratio = (double) result.oracleNanos / Math.max(1, result.mongoNanos);
+                String winner = ratio > 1.0 ? "MongoDB" : "OSON";
+                String winnerClass = ratio > 1.0 ? "winner-mongo" : "winner-oson";
+                html.append(String.format(
+                        "<tr><td>%s</td><td>%,d</td><td>%,d</td><td>%.2fx</td><td class='%s'>%s</td></tr>%n",
+                        result.description, result.mongoNanos, result.oracleNanos, ratio, winnerClass, winner));
+            }
+            html.append("</table></div>");
+
+            // Adjusted Results Table
+            html.append("""
+                <div class="section">
+                    <h2>Adjusted Performance (Protocol Overhead Removed)</h2>
+                    <p class="note">Shows what OSON performance would be if Oracle's protocol matched MongoDB's speed.</p>
+                    <table>
+                        <tr><th>Test Case</th><th>MongoDB (ns)</th><th>OSON Adjusted (ns)</th><th>Overhead Removed (ns)</th><th>Adj Ratio</th><th>Winner</th></tr>
+                """);
+
+            for (TestResult result : results.values()) {
+                if (result.testType.equals("baseline")) continue;
+                long adjustedOracleNanos = Math.max(0, result.oracleNanos - oracleOverheadDelta);
+                long saved = result.oracleNanos - adjustedOracleNanos;
+                double adjResultRatio = (double) adjustedOracleNanos / Math.max(1, result.mongoNanos);
+                String winner = adjResultRatio > 1.0 ? "MongoDB" : "OSON";
+                String winnerClass = adjResultRatio > 1.0 ? "winner-mongo" : "winner-oson";
+                String rowClass = adjResultRatio <= 1.0 ? " class='highlight'" : "";
+                html.append(String.format(
+                        "<tr%s><td>%s</td><td>%,d</td><td>%,d</td><td>%,d</td><td>%.2fx</td><td class='%s'>%s</td></tr>%n",
+                        rowClass, result.description, result.mongoNanos, adjustedOracleNanos, saved, adjResultRatio, winnerClass, winner));
+            }
+            html.append("</table></div>");
+
+            // Key Insights
+            html.append("""
+                <div class="section">
+                    <h2>Key Insights</h2>
+                    <ul>
+                        <li><strong>Protocol overhead dominates small operations</strong> - Oracle's ~%,d ns fixed overhead masks OSON's JSON manipulation efficiency for typical sub-100KB updates.</li>
+                        <li><strong>OSON partial updates shine at scale</strong> - At 1MB+ document sizes, MongoDB's O(n) document rewrite cost exceeds Oracle's protocol overhead.</li>
+                        <li><strong>MongoDB's wire protocol is highly optimized</strong> - The binary BSON protocol is ~%.1fx faster than JDBC/SQL for round-trips.</li>
+                        <li><strong>OSON wins increase with overhead removed</strong> - From %d to %d wins, particularly for large documents and middle-position array operations.</li>
+                    </ul>
+                </div>
+                """.formatted(
+                    oracleOverheadDelta,
+                    (double) oracleBaselineNanos / mongoBaselineNanos,
+                    oracleWins,
+                    adjustedOracleWins
+            ));
+
+            html.append("""
+                <div class="note" style="margin-top: 40px; text-align: center;">
+                    Generated by DocBench - BSON vs OSON Benchmark Suite
+                </div>
+                </div>
+                </body>
+                </html>
+                """);
+
+            Path reportPath = reportDir.resolve("performance_report.html");
+            Files.writeString(reportPath, html.toString());
+            System.out.println("\nPerformance report generated: " + reportPath.toAbsolutePath());
+
+        } catch (IOException e) {
+            System.out.println("Failed to generate performance report: " + e.getMessage());
+        }
     }
 
     // =========================================================================

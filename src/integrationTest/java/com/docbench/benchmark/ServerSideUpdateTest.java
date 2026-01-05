@@ -14,9 +14,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.CallableStatement;
+import java.sql.Clob;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.*;
 
 import static com.mongodb.client.model.Filters.eq;
@@ -50,6 +54,13 @@ class ServerSideUpdateTest {
 
     // Results storage
     private static final Map<String, TestResult> results = new LinkedHashMap<>();
+
+    // AWR snapshot tracking - stores [beforeSnapId, afterSnapId] for each category
+    private static final Map<String, long[]> awrSnapshots = new LinkedHashMap<>();
+    private static final String AWR_REPORT_DIR = "build/reports/awr";
+    private static boolean awrEnabled = false;
+    private static long dbId = 0;
+    private static long instanceNumber = 1;
 
     private record TestResult(String testId, String description, long mongoNanos, long oracleNanos, String testType) {}
 
@@ -108,11 +119,19 @@ class ServerSideUpdateTest {
         System.out.println("\nRunning global warmup...");
         setupAndWarmup();
         System.out.println("Global warmup complete.\n");
+
+        // Initialize AWR
+        initializeAwr();
     }
 
     @AfterAll
     static void teardown() throws SQLException {
         printFinalReport();
+
+        // Generate AWR reports
+        if (awrEnabled) {
+            generateAwrReports();
+        }
 
         if (mongoClient != null) {
             mongoClient.getDatabase("testdb").getCollection("server_update_test").drop();
@@ -180,6 +199,79 @@ class ServerSideUpdateTest {
     }
 
     // =========================================================================
+    // Test 0: Protocol Overhead Baseline (non-JSON operations)
+    // =========================================================================
+
+    @Test
+    @Order(0)
+    @DisplayName("Protocol overhead baseline")
+    void protocolOverheadBaseline() throws SQLException {
+        awrSnapshotBefore("00_baseline");
+        measureProtocolOverhead();
+        awrSnapshotAfter("00_baseline");
+    }
+
+    private static long mongoBaselineNanos;
+    private static long oracleBaselineNanos;
+
+    private void measureProtocolOverhead() throws SQLException {
+        // Create a simple document with a counter field
+        String testId = "baseline-test";
+        Document mongoDoc = new Document("_id", testId).append("counter", 0);
+        mongoCollection.insertOne(mongoDoc);
+
+        try (var stmt = oracleConnection.createStatement()) {
+            stmt.execute("CREATE TABLE IF NOT EXISTS baseline_test (id VARCHAR2(100) PRIMARY KEY, counter NUMBER)");
+            stmt.execute("INSERT INTO baseline_test (id, counter) VALUES ('" + testId + "', 0)");
+        }
+
+        // Measure MongoDB $inc (simplest possible update)
+        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+            mongoCollection.updateOne(eq("_id", testId), Updates.inc("counter", 1));
+        }
+        long mongoTotal = 0;
+        for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
+            long start = System.nanoTime();
+            mongoCollection.updateOne(eq("_id", testId), Updates.inc("counter", 1));
+            mongoTotal += System.nanoTime() - start;
+        }
+        mongoBaselineNanos = mongoTotal / MEASUREMENT_ITERATIONS;
+
+        // Measure Oracle simple UPDATE (no JSON)
+        String sql = "UPDATE baseline_test SET counter = counter + 1 WHERE id = ?";
+        try (PreparedStatement ps = oracleConnection.prepareStatement(sql)) {
+            for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+                ps.setString(1, testId);
+                ps.executeUpdate();
+            }
+            long oracleTotal = 0;
+            for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
+                ps.setString(1, testId);
+                long start = System.nanoTime();
+                ps.executeUpdate();
+                oracleTotal += System.nanoTime() - start;
+            }
+            oracleBaselineNanos = oracleTotal / MEASUREMENT_ITERATIONS;
+        }
+
+        // Cleanup
+        mongoCollection.deleteOne(eq("_id", testId));
+        try (var stmt = oracleConnection.createStatement()) {
+            stmt.execute("DROP TABLE baseline_test");
+        }
+
+        System.out.println("  PROTOCOL OVERHEAD BASELINE (non-JSON operations):");
+        System.out.printf("    MongoDB $inc baseline         : %8d ns%n", mongoBaselineNanos);
+        System.out.printf("    Oracle UPDATE baseline        : %8d ns%n", oracleBaselineNanos);
+        System.out.printf("    Oracle overhead vs MongoDB    : %8d ns (%.2fx)%n",
+                oracleBaselineNanos - mongoBaselineNanos,
+                (double) oracleBaselineNanos / mongoBaselineNanos);
+        System.out.println();
+
+        results.put("baseline", new TestResult("baseline", "Protocol baseline", mongoBaselineNanos, oracleBaselineNanos, "baseline"));
+    }
+
+    // =========================================================================
     // Test 1: Single Field Update
     // =========================================================================
 
@@ -187,6 +279,7 @@ class ServerSideUpdateTest {
     @Order(1)
     @DisplayName("Single field update - 100 field document")
     void singleFieldUpdate_100fields() throws SQLException {
+        awrSnapshotBefore("01_single_field");
         testSingleFieldUpdate("single-100", 100, 50);
     }
 
@@ -202,6 +295,7 @@ class ServerSideUpdateTest {
     @DisplayName("Single field update - 1000 field document")
     void singleFieldUpdate_1000fields() throws SQLException {
         testSingleFieldUpdate("single-1000", 1000, 500);
+        awrSnapshotAfter("01_single_field");
     }
 
     private void testSingleFieldUpdate(String testId, int totalFields, int targetField) throws SQLException {
@@ -285,6 +379,7 @@ class ServerSideUpdateTest {
     @Order(10)
     @DisplayName("Multi-field update - 3 fields in 100 field doc")
     void multiFieldUpdate_3fields() throws SQLException {
+        awrSnapshotBefore("02_multi_field");
         testMultiFieldUpdate("multi-3", 100, new int[]{10, 50, 90});
     }
 
@@ -300,6 +395,7 @@ class ServerSideUpdateTest {
     @DisplayName("Multi-field update - 10 fields in 100 field doc")
     void multiFieldUpdate_10fields() throws SQLException {
         testMultiFieldUpdate("multi-10", 100, new int[]{5, 15, 25, 35, 45, 55, 65, 75, 85, 95});
+        awrSnapshotAfter("02_multi_field");
     }
 
     private void testMultiFieldUpdate(String testId, int totalFields, int[] targetFields) throws SQLException {
@@ -403,6 +499,7 @@ class ServerSideUpdateTest {
     @Order(20)
     @DisplayName("Large doc update - 10KB document")
     void largeDocUpdate_10kb() throws SQLException {
+        awrSnapshotBefore("03_large_doc");
         testLargeDocUpdate("large-10kb", 10 * 1024);
     }
 
@@ -432,6 +529,7 @@ class ServerSideUpdateTest {
     @DisplayName("Large doc update - 4MB document")
     void largeDocUpdate_4mb() throws SQLException {
         testLargeDocUpdate("large-4mb", 4 * 1024 * 1024);
+        awrSnapshotAfter("03_large_doc");
     }
 
     private void testLargeDocUpdate(String testId, int targetSizeBytes) throws SQLException {
@@ -487,6 +585,7 @@ class ServerSideUpdateTest {
     @Order(30)
     @DisplayName("Scalar array push - 1 element")
     void scalarArrayPush_1() throws SQLException {
+        awrSnapshotBefore("04_array_push");
         testScalarArrayPush("scalar-push-1", 1);
     }
 
@@ -534,6 +633,7 @@ class ServerSideUpdateTest {
     @DisplayName("Object array push - 10 elements")
     void objectArrayPush_10() throws SQLException {
         testObjectArrayPush("object-push-10", 10);
+        awrSnapshotAfter("04_array_push");
     }
 
     private void testObjectArrayPush(String testId, int elementsPerIteration) throws SQLException {
@@ -565,6 +665,7 @@ class ServerSideUpdateTest {
     @Order(40)
     @DisplayName("Scalar array delete - beginning")
     void scalarArrayDelete_beginning() throws SQLException {
+        awrSnapshotBefore("05_array_delete");
         testScalarArrayDelete("scalar-del-begin", "beginning");
     }
 
@@ -626,6 +727,7 @@ class ServerSideUpdateTest {
     @DisplayName("Object array delete - end")
     void objectArrayDelete_end() throws SQLException {
         testObjectArrayDelete("object-del-end", "end");
+        awrSnapshotAfter("05_array_delete");
     }
 
     private void testObjectArrayDelete(String testId, String position) throws SQLException {
@@ -657,6 +759,7 @@ class ServerSideUpdateTest {
     @Order(50)
     @DisplayName("Large array update - 1MB scalar array")
     void largeArrayUpdate_1mb_scalar() throws SQLException {
+        awrSnapshotBefore("06_large_array");
         testLargeArrayUpdate("large-array-1mb-scalar", 1024 * 1024, false);
     }
 
@@ -679,6 +782,7 @@ class ServerSideUpdateTest {
     @DisplayName("Large array update - 4MB object array")
     void largeArrayUpdate_4mb_object() throws SQLException {
         testLargeArrayUpdate("large-array-4mb-object", 4 * 1024 * 1024, true);
+        awrSnapshotAfter("06_large_array");
     }
 
     private void testLargeArrayUpdate(String testId, int targetSizeBytes, boolean useObjects) throws SQLException {
@@ -1208,6 +1312,10 @@ class ServerSideUpdateTest {
                 case "single" -> "SINGLE FIELD UPDATE";
                 case "multi" -> "MULTI-FIELD UPDATE";
                 case "large" -> "LARGE DOCUMENT UPDATE";
+                case "baseline" -> "PROTOCOL OVERHEAD BASELINE";
+                case "array-scalar" -> "SCALAR ARRAY OPERATIONS";
+                case "array-object" -> "OBJECT ARRAY OPERATIONS";
+                case "large-array" -> "LARGE ARRAY OPERATIONS";
                 default -> type.toUpperCase();
             };
 
@@ -1220,11 +1328,14 @@ class ServerSideUpdateTest {
                 double ratio = (double) result.oracleNanos / Math.max(1, result.mongoNanos);
                 String winner = ratio > 1.0 ? "MongoDB" : "OSON";
 
-                if (ratio > 1.0) mongoWins++;
-                else oracleWins++;
+                // Don't count baseline in wins/totals
+                if (!result.testType.equals("baseline")) {
+                    if (ratio > 1.0) mongoWins++;
+                    else oracleWins++;
 
-                totalMongo += result.mongoNanos;
-                totalOracle += result.oracleNanos;
+                    totalMongo += result.mongoNanos;
+                    totalOracle += result.oracleNanos;
+                }
 
                 System.out.printf("%-35s %12d %12d %9.2fx %s%n",
                         result.description, result.mongoNanos, result.oracleNanos, ratio, winner);
@@ -1242,6 +1353,209 @@ class ServerSideUpdateTest {
         System.out.println("  OSON wins: " + oracleWins);
         System.out.printf("  Overall: %s is %.2fx faster for server-side updates%n",
                 overallWinner, overallRatio > 1.0 ? overallRatio : 1.0 / overallRatio);
+
+        // Protocol overhead analysis
+        if (mongoBaselineNanos > 0 && oracleBaselineNanos > 0) {
+            printProtocolOverheadAnalysis(totalMongo, totalOracle, mongoWins, oracleWins);
+        }
+
         System.out.println("=".repeat(80) + "\n");
+    }
+
+    private static void printProtocolOverheadAnalysis(long totalMongo, long totalOracle,
+                                                       int mongoWins, int oracleWins) {
+        System.out.println("\n" + "-".repeat(80));
+        System.out.println("PROTOCOL OVERHEAD ANALYSIS");
+        System.out.println("-".repeat(80));
+
+        // Calculate the overhead difference (how much more Oracle's protocol costs)
+        long oracleOverheadDelta = oracleBaselineNanos - mongoBaselineNanos;
+
+        System.out.printf("  MongoDB baseline (non-JSON $inc): %,d ns%n", mongoBaselineNanos);
+        System.out.printf("  Oracle baseline (non-JSON UPDATE): %,d ns%n", oracleBaselineNanos);
+        System.out.printf("  Oracle protocol overhead delta: %,d ns (%.2fx MongoDB)%n",
+                oracleOverheadDelta, (double) oracleBaselineNanos / mongoBaselineNanos);
+
+        System.out.println("\nADJUSTED OSON PERFORMANCE (subtracting protocol overhead delta):");
+        System.out.println("  If Oracle's protocol matched MongoDB's speed, OSON times would be:");
+
+        // Show adjusted results for all non-baseline tests
+        Map<String, List<TestResult>> grouped = new LinkedHashMap<>();
+        for (TestResult result : results.values()) {
+            if (!result.testType.equals("baseline")) {
+                grouped.computeIfAbsent(result.testType, k -> new ArrayList<>()).add(result);
+            }
+        }
+
+        long totalAdjustedOracle = 0;
+        int adjustedOracleWins = 0;
+        int adjustedMongoWins = 0;
+
+        System.out.printf("\n%-35s %12s %12s %12s %10s%n",
+                "Test Case", "MongoDB (ns)", "OSON Adj(ns)", "Saved (ns)", "Adj Ratio");
+        System.out.println("-".repeat(80));
+
+        for (Map.Entry<String, List<TestResult>> entry : grouped.entrySet()) {
+            for (TestResult result : entry.getValue()) {
+                // Adjusted Oracle time = actual - overhead delta (but not less than 0)
+                long adjustedOracleNanos = Math.max(0, result.oracleNanos - oracleOverheadDelta);
+                long saved = result.oracleNanos - adjustedOracleNanos;
+                totalAdjustedOracle += adjustedOracleNanos;
+
+                double adjustedRatio = (double) adjustedOracleNanos / Math.max(1, result.mongoNanos);
+                if (adjustedRatio > 1.0) adjustedMongoWins++;
+                else adjustedOracleWins++;
+
+                String adjWinner = adjustedRatio > 1.0 ? "MongoDB" : "OSON";
+                System.out.printf("%-35s %12d %12d %12d %9.2fx %s%n",
+                        result.description, result.mongoNanos, adjustedOracleNanos, saved, adjustedRatio, adjWinner);
+            }
+        }
+
+        System.out.println("-".repeat(80));
+        double adjustedOverallRatio = (double) totalAdjustedOracle / Math.max(1, totalMongo);
+        String adjustedOverallWinner = adjustedOverallRatio > 1.0 ? "MongoDB" : "OSON";
+        System.out.printf("ADJUSTED TOTAL %20s %12d %12d %12d %9.2fx %s%n",
+                "", totalMongo, totalAdjustedOracle, totalOracle - totalAdjustedOracle,
+                adjustedOverallRatio, adjustedOverallWinner);
+
+        System.out.println("\nAdjusted Summary:");
+        System.out.println("  MongoDB wins (adjusted): " + adjustedMongoWins);
+        System.out.println("  OSON wins (adjusted): " + adjustedOracleWins);
+        System.out.printf("  If protocol overhead matched: %s would be %.2fx faster%n",
+                adjustedOverallWinner, adjustedOverallRatio > 1.0 ? adjustedOverallRatio : 1.0 / adjustedOverallRatio);
+
+        // Calculate what % of Oracle's time is pure protocol overhead
+        double overheadPct = (double) oracleOverheadDelta / oracleBaselineNanos * 100;
+        System.out.printf("\n  Analysis: Oracle's ~%,d ns protocol overhead accounts for ~%.0f%% of baseline ops%n",
+                oracleOverheadDelta, overheadPct);
+        System.out.println("  This overhead is a fixed cost regardless of JSON operation complexity.");
+    }
+
+    // =========================================================================
+    // AWR Snapshot and Report Generation
+    // =========================================================================
+
+    private static void initializeAwr() {
+        try {
+            // Check if AWR is accessible and get database ID
+            // Use CON_DBID for PDB context (CON_DBID = DBID for non-CDB, PDB DBID for PDB)
+            try (var stmt = oracleConnection.createStatement();
+                 ResultSet rs = stmt.executeQuery(
+                         "SELECT con_dbid, instance_number FROM v$database, v$instance")) {
+                if (rs.next()) {
+                    dbId = rs.getLong(1);
+                    instanceNumber = rs.getLong(2);
+                    awrEnabled = true;
+                    System.out.println("AWR enabled - CON_DBID: " + dbId + ", Instance: " + instanceNumber);
+
+                    // Create report directory
+                    Path reportDir = Path.of(AWR_REPORT_DIR);
+                    Files.createDirectories(reportDir);
+                    System.out.println("AWR reports will be saved to: " + reportDir.toAbsolutePath());
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("AWR not available: " + e.getMessage());
+            awrEnabled = false;
+        }
+    }
+
+    private static long createAwrSnapshot(String description) {
+        if (!awrEnabled) return -1;
+
+        try (CallableStatement cs = oracleConnection.prepareCall(
+                "{ ? = call DBMS_WORKLOAD_REPOSITORY.CREATE_SNAPSHOT() }")) {
+            cs.registerOutParameter(1, Types.NUMERIC);
+            cs.execute();
+            long snapId = cs.getLong(1);
+            System.out.println("  AWR Snapshot " + snapId + " created: " + description);
+            return snapId;
+        } catch (SQLException e) {
+            System.out.println("  AWR snapshot failed: " + e.getMessage());
+            return -1;
+        }
+    }
+
+    private static void awrSnapshotBefore(String category) {
+        if (!awrEnabled) return;
+        long snapId = createAwrSnapshot("Before " + category);
+        if (snapId > 0) {
+            awrSnapshots.put(category, new long[]{snapId, -1});
+        }
+    }
+
+    private static void awrSnapshotAfter(String category) {
+        if (!awrEnabled) return;
+        long[] snaps = awrSnapshots.get(category);
+        if (snaps != null && snaps[0] > 0) {
+            long snapId = createAwrSnapshot("After " + category);
+            snaps[1] = snapId;
+        }
+    }
+
+    private static void generateAwrReports() {
+        if (!awrEnabled || awrSnapshots.isEmpty()) {
+            System.out.println("\nNo AWR snapshots to report.");
+            return;
+        }
+
+        System.out.println("\n" + "=".repeat(80));
+        System.out.println("  GENERATING AWR REPORTS");
+        System.out.println("=".repeat(80));
+
+        for (Map.Entry<String, long[]> entry : awrSnapshots.entrySet()) {
+            String category = entry.getKey();
+            long[] snaps = entry.getValue();
+
+            if (snaps[0] <= 0 || snaps[1] <= 0) {
+                System.out.println("  Skipping " + category + " - incomplete snapshots");
+                continue;
+            }
+
+            try {
+                String filename = AWR_REPORT_DIR + "/awr_" + category.replaceAll("[^a-zA-Z0-9]", "_") + ".html";
+                generateAwrHtmlReport(snaps[0], snaps[1], filename);
+                System.out.println("  Generated: " + filename + " (snaps " + snaps[0] + " - " + snaps[1] + ")");
+            } catch (Exception e) {
+                System.out.println("  Failed to generate report for " + category + ": " + e.getMessage());
+            }
+        }
+
+        System.out.println("=".repeat(80) + "\n");
+    }
+
+    private static void generateAwrHtmlReport(long beginSnap, long endSnap, String filename) throws SQLException, IOException {
+        // Use AWR report function to generate HTML report
+        String sql = """
+            SELECT output FROM TABLE(
+                DBMS_WORKLOAD_REPOSITORY.AWR_REPORT_HTML(
+                    l_dbid => ?,
+                    l_inst_num => ?,
+                    l_bid => ?,
+                    l_eid => ?
+                )
+            )
+            """;
+
+        StringBuilder report = new StringBuilder();
+        try (PreparedStatement ps = oracleConnection.prepareStatement(sql)) {
+            ps.setLong(1, dbId);
+            ps.setLong(2, instanceNumber);
+            ps.setLong(3, beginSnap);
+            ps.setLong(4, endSnap);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String line = rs.getString(1);
+                    if (line != null) {
+                        report.append(line).append("\n");
+                    }
+                }
+            }
+        }
+
+        // Write to file
+        Files.writeString(Path.of(filename), report.toString());
     }
 }

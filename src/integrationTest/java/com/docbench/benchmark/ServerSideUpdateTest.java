@@ -5,10 +5,7 @@ import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Updates;
-import oracle.jdbc.OracleType;
 import oracle.jdbc.pool.OracleDataSource;
-import oracle.sql.json.OracleJsonFactory;
-import oracle.sql.json.OracleJsonValue;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.junit.jupiter.api.*;
@@ -49,9 +46,6 @@ class ServerSideUpdateTest {
     private static MongoCollection<Document> mongoCollection;
     private static Connection oracleConnection;
 
-    // Oracle JSON factory for native OSON binding
-    private static final OracleJsonFactory JSON_FACTORY = new OracleJsonFactory();
-
     private static final String ORACLE_TABLE = "server_update_test";
 
     // Results storage
@@ -86,11 +80,6 @@ class ServerSideUpdateTest {
         // Enable implicit statement caching for prepared statement reuse
         ods.setImplicitCachingEnabled(true);
 
-        // Set connection properties for native JSON handling
-        Properties connProps = new Properties();
-        connProps.setProperty("oracle.jdbc.jsonDefaultGetObjectType", "oracle.sql.json.OracleJsonValue");
-        ods.setConnectionProperties(connProps);
-
         oracleConnection = ods.getConnection();
         oracleConnection.setAutoCommit(true);
 
@@ -111,7 +100,7 @@ class ServerSideUpdateTest {
         System.out.println("  " + "-".repeat(74));
         System.out.println("  Oracle: JSON_TRANSFORM (partial OSON update)");
         System.out.println("    - Statement caching enabled (OracleDataSource)");
-        System.out.println("    - OracleType.JSON native binding");
+        System.out.println("    - ps.setString for scalar bind values (Oracle team recommendation)");
         System.out.println("  MongoDB: $set operator");
         System.out.println("=".repeat(80));
 
@@ -170,15 +159,14 @@ class ServerSideUpdateTest {
             ps.executeUpdate();
         }
 
-        // Warmup queries - use optimized Oracle approach with OracleType.JSON binding
+        // Warmup queries - Oracle team recommendation: use ps.setString for scalar values
         for (int i = 0; i < 50; i++) {
             mongoCollection.updateOne(eq("_id", warmupId), Updates.set("field_50", "warmup_" + i));
 
             try (PreparedStatement ps = oracleConnection.prepareStatement(
                     "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, SET '$.field_50' = ?) WHERE id = ?")) {
-                // Use OracleType.JSON binding for native OSON - avoids text-to-OSON conversion
-                OracleJsonValue jsonVal = JSON_FACTORY.createString("warmup_" + i);
-                ps.setObject(1, jsonVal, OracleType.JSON);
+                // Oracle team: use ps.setString for scalar values instead of OracleJsonValue
+                ps.setString(1, "warmup_" + i);
                 ps.setString(2, warmupId);
                 ps.executeUpdate();
             }
@@ -259,7 +247,7 @@ class ServerSideUpdateTest {
     }
 
     private long measureOracleSingleUpdate(String docId, String fieldName) throws SQLException {
-        // Use OracleType.JSON binding for native OSON - avoids text-to-OSON conversion
+        // Oracle team recommendation: use ps.setString for scalar values
         String sql = "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, SET '$." + fieldName + "' = ?) WHERE id = ?";
 
         // Use single PreparedStatement for all iterations (like MongoDB's connection pooling)
@@ -267,9 +255,8 @@ class ServerSideUpdateTest {
             // Warmup
             for (int i = 0; i < WARMUP_ITERATIONS; i++) {
                 String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + "                ";
-                // Use OracleType.JSON binding for native OSON - avoids text-to-OSON conversion
-                OracleJsonValue jsonVal = JSON_FACTORY.createString(value);
-                ps.setObject(1, jsonVal, OracleType.JSON);
+                // Oracle team: use ps.setString for scalar values instead of OracleJsonValue
+                ps.setString(1, value);
                 ps.setString(2, docId);
                 ps.executeUpdate();
             }
@@ -278,9 +265,8 @@ class ServerSideUpdateTest {
             long totalNanos = 0;
             for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
                 String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + "                ";
-                // Use OracleType.JSON binding for native OSON
-                OracleJsonValue jsonVal = JSON_FACTORY.createString(value);
-                ps.setObject(1, jsonVal, OracleType.JSON);
+                // Oracle team: use ps.setString for scalar values
+                ps.setString(1, value);
                 ps.setString(2, docId);
                 long start = System.nanoTime();
                 ps.executeUpdate();
@@ -371,7 +357,7 @@ class ServerSideUpdateTest {
     }
 
     private long measureOracleMultiUpdate(String docId, String[] fieldNames) throws SQLException {
-        // Build JSON_TRANSFORM with multiple SET operations using OracleType.JSON binding
+        // Build JSON_TRANSFORM with multiple SET operations
         StringBuilder sql = new StringBuilder("UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc");
         for (int i = 0; i < fieldNames.length; i++) {
             sql.append(", SET '$.").append(fieldNames[i]).append("' = ?");
@@ -383,10 +369,9 @@ class ServerSideUpdateTest {
             // Warmup
             for (int i = 0; i < WARMUP_ITERATIONS; i++) {
                 String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + "                ";
-                // Use OracleType.JSON binding for native OSON
-                OracleJsonValue jsonVal = JSON_FACTORY.createString(value);
+                // Oracle team: use ps.setString for scalar values
                 for (int j = 0; j < fieldNames.length; j++) {
-                    ps.setObject(j + 1, jsonVal, OracleType.JSON);
+                    ps.setString(j + 1, value);
                 }
                 ps.setString(fieldNames.length + 1, docId);
                 ps.executeUpdate();
@@ -396,10 +381,9 @@ class ServerSideUpdateTest {
             long totalNanos = 0;
             for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
                 String value = (i % 2 == 0) ? "updated_" + i : "updated_" + i + "                ";
-                // Use OracleType.JSON binding for native OSON
-                OracleJsonValue jsonVal = JSON_FACTORY.createString(value);
+                // Oracle team: use ps.setString for scalar values
                 for (int j = 0; j < fieldNames.length; j++) {
-                    ps.setObject(j + 1, jsonVal, OracleType.JSON);
+                    ps.setString(j + 1, value);
                 }
                 ps.setString(fieldNames.length + 1, docId);
                 long start = System.nanoTime();
@@ -533,6 +517,142 @@ class ServerSideUpdateTest {
         cleanupTestDocument(testId);
     }
 
+    // =========================================================================
+    // Test 5: Array Element Delete Operations
+    // =========================================================================
+
+    @Test
+    @Order(40)
+    @DisplayName("Array delete - from beginning")
+    void arrayDelete_beginning() throws SQLException {
+        testArrayDelete("array-delete-begin", "beginning");
+    }
+
+    @Test
+    @Order(41)
+    @DisplayName("Array delete - from middle")
+    void arrayDelete_middle() throws SQLException {
+        testArrayDelete("array-delete-middle", "middle");
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("Array delete - from end")
+    void arrayDelete_end() throws SQLException {
+        testArrayDelete("array-delete-end", "end");
+    }
+
+    private void testArrayDelete(String testId, String position) throws SQLException {
+        // Use separate document IDs for MongoDB and Oracle
+        String mongoDocId = testId + "-mongo";
+        String oracleDocId = testId + "-oracle";
+
+        // Create fresh documents for MongoDB test (100 elements to delete from)
+        createDocumentWithArray(mongoDocId, 100);
+        long mongoNanos = measureMongoDelete(mongoDocId, position);
+        cleanupTestDocument(mongoDocId);
+
+        // Create fresh documents for Oracle test
+        createDocumentWithArray(oracleDocId, 100);
+        long oracleNanos = measureOracleDelete(oracleDocId, position);
+        cleanupTestDocument(oracleDocId);
+
+        String description = "Array delete " + position;
+        results.put(testId, new TestResult(testId, description, mongoNanos, oracleNanos, "array"));
+
+        double ratio = (double) oracleNanos / Math.max(1, mongoNanos);
+        String winner = ratio > 1.0 ? "MongoDB" : "OSON";
+        System.out.printf("  %-35s: MongoDB=%8d ns, OSON=%8d ns, %6.2fx %s%n",
+                description, mongoNanos, oracleNanos, ratio, winner);
+    }
+
+    private long measureMongoDelete(String docId, String position) {
+        // MongoDB $pop: -1 removes first, 1 removes last
+        // For middle, we use $unset with positional and then $pull to clean up
+        Bson update;
+        switch (position) {
+            case "beginning" -> update = Updates.popFirst("items");
+            case "end" -> update = Updates.popLast("items");
+            default -> update = Updates.popFirst("items"); // middle will use special handling
+        }
+
+        // Warmup
+        for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
+            // Re-add element to keep array size stable for fair comparison
+            if (position.equals("middle")) {
+                // For middle delete: remove at index 50, then re-add
+                mongoCollection.updateOne(eq("_id", docId), Updates.unset("items.50"));
+                mongoCollection.updateOne(eq("_id", docId), Updates.pull("items", null));
+                mongoCollection.updateOne(eq("_id", docId), Updates.push("items", "item_replaced_" + i));
+            } else {
+                mongoCollection.updateOne(eq("_id", docId), update);
+                mongoCollection.updateOne(eq("_id", docId), Updates.push("items", "item_replaced_" + i));
+            }
+        }
+
+        // Measure
+        long totalNanos = 0;
+        for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
+            long start = System.nanoTime();
+            if (position.equals("middle")) {
+                mongoCollection.updateOne(eq("_id", docId), Updates.unset("items.50"));
+                mongoCollection.updateOne(eq("_id", docId), Updates.pull("items", null));
+            } else {
+                mongoCollection.updateOne(eq("_id", docId), update);
+            }
+            totalNanos += System.nanoTime() - start;
+
+            // Re-add element to keep array size stable
+            mongoCollection.updateOne(eq("_id", docId), Updates.push("items", "item_replaced_" + i));
+        }
+
+        return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
+    }
+
+    private long measureOracleDelete(String docId, String position) throws SQLException {
+        // Oracle JSON_TRANSFORM REMOVE with array index
+        // $.items[0] for first, $.items[last] for last, $.items[50] for middle
+        String jsonPath = switch (position) {
+            case "beginning" -> "$.items[0]";
+            case "end" -> "$.items[last]";
+            default -> "$.items[50]"; // middle
+        };
+
+        String deleteSql = "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, REMOVE '" + jsonPath + "') WHERE id = ?";
+        String appendSql = "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, APPEND '$.items' = ?) WHERE id = ?";
+
+        try (PreparedStatement deletePs = oracleConnection.prepareStatement(deleteSql);
+             PreparedStatement appendPs = oracleConnection.prepareStatement(appendSql)) {
+
+            // Warmup
+            for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
+                deletePs.setString(1, docId);
+                deletePs.executeUpdate();
+
+                // Re-add element to keep array size stable
+                appendPs.setString(1, "item_replaced_" + i);
+                appendPs.setString(2, docId);
+                appendPs.executeUpdate();
+            }
+
+            // Measure
+            long totalNanos = 0;
+            for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
+                deletePs.setString(1, docId);
+                long start = System.nanoTime();
+                deletePs.executeUpdate();
+                totalNanos += System.nanoTime() - start;
+
+                // Re-add element to keep array size stable
+                appendPs.setString(1, "item_replaced_" + i);
+                appendPs.setString(2, docId);
+                appendPs.executeUpdate();
+            }
+
+            return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
+        }
+    }
+
     private void createDocumentWithArray(String testId, int initialArraySize) throws SQLException {
         // Build initial array
         List<String> initialArray = new ArrayList<>();
@@ -592,8 +712,8 @@ class ServerSideUpdateTest {
             for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
                 for (int j = 0; j < elementsPerIteration; j++) {
                     String value = (i % 2 == 0) ? "new_item_" + i + "_" + j : "new_item_" + i + "_" + j + "        ";
-                    OracleJsonValue jsonVal = JSON_FACTORY.createString(value);
-                    ps.setObject(1, jsonVal, OracleType.JSON);
+                    // Oracle team: use ps.setString for scalar values
+                    ps.setString(1, value);
                     ps.setString(2, docId);
                     ps.executeUpdate();
                 }
@@ -605,8 +725,8 @@ class ServerSideUpdateTest {
                 long start = System.nanoTime();
                 for (int j = 0; j < elementsPerIteration; j++) {
                     String value = (i % 2 == 0) ? "new_item_" + i + "_" + j : "new_item_" + i + "_" + j + "        ";
-                    OracleJsonValue jsonVal = JSON_FACTORY.createString(value);
-                    ps.setObject(1, jsonVal, OracleType.JSON);
+                    // Oracle team: use ps.setString for scalar values
+                    ps.setString(1, value);
                     ps.setString(2, docId);
                     ps.executeUpdate();
                 }

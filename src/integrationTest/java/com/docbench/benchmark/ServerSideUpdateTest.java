@@ -40,6 +40,9 @@ class ServerSideUpdateTest {
     // Configuration
     private static final int WARMUP_ITERATIONS = 100;
     private static final int MEASUREMENT_ITERATIONS = 1_000;
+    // Array tests use fewer iterations since each push permanently grows the array
+    private static final int ARRAY_WARMUP_ITERATIONS = 10;
+    private static final int ARRAY_MEASUREMENT_ITERATIONS = 100;
 
     // Database connections
     private static MongoClient mongoClient;
@@ -476,6 +479,142 @@ class ServerSideUpdateTest {
 
         // Cleanup
         cleanupTestDocument(testId);
+    }
+
+    // =========================================================================
+    // Test 4: Array Updates (push/append operations)
+    // =========================================================================
+
+    @Test
+    @Order(30)
+    @DisplayName("Array incremental push - 1 element per iteration")
+    void arrayPush_singleElement() throws SQLException {
+        testArrayPush("array-push-1", 1);
+    }
+
+    @Test
+    @Order(31)
+    @DisplayName("Array incremental push - 10 elements per iteration")
+    void arrayPush_10elements() throws SQLException {
+        testArrayPush("array-push-10", 10);
+    }
+
+    @Test
+    @Order(32)
+    @DisplayName("Array incremental push - 100 elements per iteration")
+    void arrayPush_100elements() throws SQLException {
+        testArrayPush("array-push-100", 100);
+    }
+
+    private void testArrayPush(String testId, int elementsPerIteration) throws SQLException {
+        // Use separate document IDs for MongoDB and Oracle to avoid cross-contamination
+        String mongoDocId = testId + "-mongo";
+        String oracleDocId = testId + "-oracle";
+
+        // Create fresh documents for MongoDB test
+        createDocumentWithArray(mongoDocId, 10);
+        long mongoNanos = measureMongoPush(mongoDocId, elementsPerIteration);
+        cleanupTestDocument(mongoDocId);
+
+        // Create fresh documents for Oracle test
+        createDocumentWithArray(oracleDocId, 10);
+        long oracleNanos = measureOraclePush(oracleDocId, elementsPerIteration);
+        cleanupTestDocument(oracleDocId);
+
+        String description = "Array push " + elementsPerIteration + "x1 elem";
+        results.put(testId, new TestResult(testId, description, mongoNanos, oracleNanos, "array"));
+
+        double ratio = (double) oracleNanos / Math.max(1, mongoNanos);
+        String winner = ratio > 1.0 ? "MongoDB" : "OSON";
+        System.out.printf("  %-35s: MongoDB=%8d ns, OSON=%8d ns, %6.2fx %s%n",
+                description, mongoNanos, oracleNanos, ratio, winner);
+
+        // Cleanup
+        cleanupTestDocument(testId);
+    }
+
+    private void createDocumentWithArray(String testId, int initialArraySize) throws SQLException {
+        // Build initial array
+        List<String> initialArray = new ArrayList<>();
+        StringBuilder oracleArray = new StringBuilder("[");
+        for (int i = 0; i < initialArraySize; i++) {
+            initialArray.add("item_" + i);
+            if (i > 0) oracleArray.append(",");
+            oracleArray.append("\"item_").append(i).append("\"");
+        }
+        oracleArray.append("]");
+
+        Document mongoDoc = new Document("_id", testId)
+                .append("items", initialArray)
+                .append("counter", 0);
+
+        String oracleJson = "{\"_id\":\"" + testId + "\",\"items\":" + oracleArray + ",\"counter\":0}";
+
+        mongoCollection.insertOne(mongoDoc);
+        try (PreparedStatement ps = oracleConnection.prepareStatement(
+                "INSERT INTO " + ORACLE_TABLE + " (id, doc) VALUES (?, ?)")) {
+            ps.setString(1, testId);
+            ps.setString(2, oracleJson);
+            ps.executeUpdate();
+        }
+    }
+
+    private long measureMongoPush(String docId, int elementsPerIteration) {
+        // Incremental push: each element pushed one at a time
+        // Warmup - push elements one at a time
+        for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
+            for (int j = 0; j < elementsPerIteration; j++) {
+                String value = (i % 2 == 0) ? "new_item_" + i + "_" + j : "new_item_" + i + "_" + j + "        ";
+                mongoCollection.updateOne(eq("_id", docId), Updates.push("items", value));
+            }
+        }
+
+        // Measure - push elements one at a time
+        long totalNanos = 0;
+        for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
+            long start = System.nanoTime();
+            for (int j = 0; j < elementsPerIteration; j++) {
+                String value = (i % 2 == 0) ? "new_item_" + i + "_" + j : "new_item_" + i + "_" + j + "        ";
+                mongoCollection.updateOne(eq("_id", docId), Updates.push("items", value));
+            }
+            totalNanos += System.nanoTime() - start;
+        }
+
+        return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
+    }
+
+    private long measureOraclePush(String docId, int elementsPerIteration) throws SQLException {
+        // Incremental push: each element pushed one at a time using APPEND
+        String sql = "UPDATE " + ORACLE_TABLE + " SET doc = JSON_TRANSFORM(doc, APPEND '$.items' = ?) WHERE id = ?";
+
+        try (PreparedStatement ps = oracleConnection.prepareStatement(sql)) {
+            // Warmup - push elements one at a time
+            for (int i = 0; i < ARRAY_WARMUP_ITERATIONS; i++) {
+                for (int j = 0; j < elementsPerIteration; j++) {
+                    String value = (i % 2 == 0) ? "new_item_" + i + "_" + j : "new_item_" + i + "_" + j + "        ";
+                    OracleJsonValue jsonVal = JSON_FACTORY.createString(value);
+                    ps.setObject(1, jsonVal, OracleType.JSON);
+                    ps.setString(2, docId);
+                    ps.executeUpdate();
+                }
+            }
+
+            // Measure - push elements one at a time
+            long totalNanos = 0;
+            for (int i = 0; i < ARRAY_MEASUREMENT_ITERATIONS; i++) {
+                long start = System.nanoTime();
+                for (int j = 0; j < elementsPerIteration; j++) {
+                    String value = (i % 2 == 0) ? "new_item_" + i + "_" + j : "new_item_" + i + "_" + j + "        ";
+                    OracleJsonValue jsonVal = JSON_FACTORY.createString(value);
+                    ps.setObject(1, jsonVal, OracleType.JSON);
+                    ps.setString(2, docId);
+                    ps.executeUpdate();
+                }
+                totalNanos += System.nanoTime() - start;
+            }
+
+            return totalNanos / ARRAY_MEASUREMENT_ITERATIONS;
+        }
     }
 
     // =========================================================================

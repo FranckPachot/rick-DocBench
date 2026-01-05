@@ -499,37 +499,45 @@ class ServerSideUpdateTest {
     @Order(20)
     @DisplayName("Large doc update - 10KB document")
     void largeDocUpdate_10kb() throws SQLException {
-        awrSnapshotBefore("03_large_doc");
+        awrSnapshotBefore("03a_large_doc_10KB");
         testLargeDocUpdate("large-10kb", 10 * 1024);
+        awrSnapshotAfter("03a_large_doc_10KB");
     }
 
     @Test
     @Order(21)
     @DisplayName("Large doc update - 50KB document")
     void largeDocUpdate_50kb() throws SQLException {
+        awrSnapshotBefore("03b_large_doc_50KB");
         testLargeDocUpdate("large-50kb", 50 * 1024);
+        awrSnapshotAfter("03b_large_doc_50KB");
     }
 
     @Test
     @Order(22)
     @DisplayName("Large doc update - 100KB document")
     void largeDocUpdate_100kb() throws SQLException {
+        awrSnapshotBefore("03c_large_doc_100KB");
         testLargeDocUpdate("large-100kb", 100 * 1024);
+        awrSnapshotAfter("03c_large_doc_100KB");
     }
 
     @Test
     @Order(23)
     @DisplayName("Large doc update - 1MB document")
     void largeDocUpdate_1mb() throws SQLException {
+        awrSnapshotBefore("03d_large_doc_1MB");
         testLargeDocUpdate("large-1mb", 1024 * 1024);
+        awrSnapshotAfter("03d_large_doc_1MB");
     }
 
     @Test
     @Order(24)
     @DisplayName("Large doc update - 4MB document")
     void largeDocUpdate_4mb() throws SQLException {
+        awrSnapshotBefore("03e_large_doc_4MB");
         testLargeDocUpdate("large-4mb", 4 * 1024 * 1024);
-        awrSnapshotAfter("03_large_doc");
+        awrSnapshotAfter("03e_large_doc_4MB");
     }
 
     private void testLargeDocUpdate(String testId, int targetSizeBytes) throws SQLException {

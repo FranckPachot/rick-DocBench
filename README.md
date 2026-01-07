@@ -6,7 +6,6 @@ DocBench provides comprehensive benchmarks comparing MongoDB's BSON and Oracle's
 
 1. **Client-Side Field Access**: O(n) vs O(1) algorithmic complexity
 2. **Server-Side Updates**: MongoDB `$set` vs Oracle `JSON_TRANSFORM`
-3. **Protocol Overhead**: Wire protocol efficiency comparison
 
 ## Table of Contents
 
@@ -29,14 +28,6 @@ DocBench provides comprehensive benchmarks comparing MongoDB's BSON and Oracle's
 
 **Test Environment**: Oracle 26ai (23.26.0.0.0), MongoDB 8.0, Java 21, WSL2 Linux
 
-### Executive Summary
-
-| Metric | Raw Performance | Adjusted (Protocol Overhead Removed) |
-|--------|-----------------|--------------------------------------|
-| **Server-Side Updates** | MongoDB 1.58x faster | MongoDB 1.32x faster |
-| **MongoDB Wins** | 22 tests | 20 tests |
-| **OSON Wins** | 3 tests | 5 tests |
-
 ### Client-Side Field Access (O(n) vs O(1))
 
 | Test Case | BSON (ns) | OSON (ns) | Ratio | Winner |
@@ -48,20 +39,11 @@ DocBench provides comprehensive benchmarks comparing MongoDB's BSON and Oracle's
 | Position 1000/1000 | 30,393 | 59 | **515.14x** | OSON |
 | **TOTAL** | 56,062 | 811 | **69.13x** | **OSON** |
 
-### Protocol Overhead Analysis
-
-| Metric | Value |
-|--------|-------|
-| MongoDB baseline (non-JSON $inc) | 418,096 ns |
-| Oracle baseline (non-JSON UPDATE) | 862,908 ns |
-| Oracle protocol overhead delta | 444,812 ns (2.06x MongoDB) |
-
 ### Key Findings
 
 - **Client-side OSON dominates**: 69x faster for field access due to O(1) hash lookup
 - **OSON wins at scale**: 4MB documents show OSON 2x faster than MongoDB
-- **Protocol overhead**: Oracle's JDBC/SQL adds ~445µs fixed cost per operation
-- **Crossover point**: ~1MB document size where OSON's efficiency exceeds protocol overhead
+- **Large object arrays**: OSON outperforms MongoDB on 1MB+ object array operations
 
 ---
 
@@ -414,7 +396,6 @@ After running `ServerSideUpdateTest`, AWR reports are saved to:
 
 ```
 build/reports/awr/
-├── awr_00_baseline.html          # Protocol overhead baseline
 ├── awr_01_single_field.html      # Single field updates
 ├── awr_02_multi_field.html       # Multi-field updates
 ├── awr_03a_large_doc_10KB.html   # 10KB document updates
@@ -456,9 +437,8 @@ Open in browser to analyze Oracle performance metrics including:
 ### Performance Report Sections
 
 1. **Executive Summary**: Overall winner and win counts
-2. **Protocol Overhead Analysis**: Fixed cost per database round-trip
-3. **Raw Performance Results**: Actual measured times
-4. **Adjusted Performance**: Results with protocol overhead removed
+2. **Raw Performance Results**: Actual measured times
+3. **Test Category Breakdown**: Results by operation type
 
 ### Interpreting Ratios
 
@@ -471,8 +451,8 @@ Open in browser to analyze Oracle performance metrics including:
 ### Key Metrics
 
 - **Raw Performance**: Actual end-to-end operation time
-- **Adjusted Performance**: Operation time minus protocol overhead
-- **Protocol Overhead**: Fixed cost of database round-trip (~445µs for Oracle vs ~418µs for MongoDB)
+- **Latency (ns)**: Time per operation in nanoseconds
+- **Ratio**: Performance comparison (e.g., 2.5x means one is 2.5 times faster)
 
 ---
 

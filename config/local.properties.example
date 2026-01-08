@@ -3,7 +3,8 @@
 # DO NOT commit local.properties
 
 # MongoDB configuration
-mongodb.uri=mongodb://username:password@localhost:27017/database
+# Use replicaSet parameter for production-like durability testing (j:true support)
+mongodb.uri=mongodb://username:password@localhost:27017/database?replicaSet=rs0
 mongodb.database=testdb
 
 # Oracle configuration (for OSON adapter)

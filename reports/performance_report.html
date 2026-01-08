@@ -34,13 +34,13 @@
     <div class="comparison">
         <div>
             <h3>Raw Performance</h3>
-            <p class="metric">MongoDB 1.90x faster</p>
-            <p>MongoDB wins: 22 | OSON wins: 3</p>
+            <p class="metric">MongoDB 0.86x faster</p>
+            <p>MongoDB wins: 2 | OSON wins: 23</p>
         </div>
         <div>
             <h3>Adjusted (Protocol Overhead Removed)</h3>
-            <p class="metric">MongoDB 1.62x faster</p>
-            <p>MongoDB wins: 19 | OSON wins: 6</p>
+            <p class="metric">MongoDB 1.04x faster</p>
+            <p>MongoDB wins: 13 | OSON wins: 12</p>
         </div>
     </div>
 </div>
@@ -48,10 +48,10 @@
     <h2>Protocol Overhead Analysis</h2>
     <table>
         <tr><th>Metric</th><th>Value</th></tr>
-        <tr><td>MongoDB baseline (non-JSON $inc)</td><td>451,839 ns</td></tr>
-        <tr><td>Oracle baseline (non-JSON UPDATE)</td><td>961,186 ns</td></tr>
-        <tr><td>Oracle protocol overhead delta</td><td>509,347 ns (2.13x MongoDB)</td></tr>
-        <tr><td>Overhead as % of Oracle baseline</td><td>53.0%</td></tr>
+        <tr><td>MongoDB baseline (non-JSON $inc)</td><td>1,958,470 ns</td></tr>
+        <tr><td>Oracle baseline (non-JSON UPDATE)</td><td>1,012,620 ns</td></tr>
+        <tr><td>Oracle protocol overhead delta</td><td>-945,850 ns (0.52x MongoDB)</td></tr>
+        <tr><td>Overhead as % of Oracle baseline</td><td>-93.4%</td></tr>
     </table>
     <p class="note">The protocol overhead is a fixed cost per database round-trip, regardless of JSON operation complexity.
     Oracle's SQL/JDBC protocol has higher latency than MongoDB's binary wire protocol.</p>
@@ -60,68 +60,68 @@
     <h2>Raw Performance Results</h2>
     <table>
         <tr><th>Test Case</th><th>MongoDB (ns)</th><th>OSON (ns)</th><th>Ratio</th><th>Winner</th></tr>
-<tr><td>Single update 100 fields</td><td>425,560</td><td>1,294,246</td><td>3.04x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Single update 500 fields</td><td>459,412</td><td>1,113,220</td><td>2.42x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Single update 1000 fields</td><td>487,106</td><td>1,126,751</td><td>2.31x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Multi-update 3 fields</td><td>408,014</td><td>1,296,290</td><td>3.18x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Multi-update 5 fields</td><td>400,074</td><td>1,245,885</td><td>3.11x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Multi-update 10 fields</td><td>390,778</td><td>1,249,404</td><td>3.20x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large doc ~10KB</td><td>348,414</td><td>1,075,736</td><td>3.09x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large doc ~50KB</td><td>351,133</td><td>1,080,470</td><td>3.08x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large doc ~100KB</td><td>372,417</td><td>1,091,410</td><td>2.93x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large doc ~1024KB</td><td>601,795</td><td>1,102,088</td><td>1.83x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large doc ~4096KB</td><td>1,869,670</td><td>1,096,352</td><td>0.59x</td><td class='winner-oson'>OSON</td></tr>
-<tr><td>Scalar push 1x1</td><td>368,973</td><td>1,141,106</td><td>3.09x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Scalar push 10x1</td><td>4,027,174</td><td>14,468,448</td><td>3.59x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Object push 1x1</td><td>427,639</td><td>1,258,440</td><td>2.94x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Object push 10x1</td><td>5,748,507</td><td>15,079,063</td><td>2.62x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Scalar delete beginning</td><td>348,273</td><td>1,186,555</td><td>3.41x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Scalar delete middle</td><td>717,622</td><td>1,180,299</td><td>1.64x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Scalar delete end</td><td>342,555</td><td>1,190,442</td><td>3.48x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Object delete beginning</td><td>381,226</td><td>1,069,726</td><td>2.81x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Object delete middle</td><td>769,581</td><td>1,118,922</td><td>1.45x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Object delete end</td><td>387,885</td><td>1,070,484</td><td>2.76x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large 1MB scalar array</td><td>2,073,746</td><td>7,139,300</td><td>3.44x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large 4MB scalar array</td><td>9,087,370</td><td>17,208,249</td><td>1.89x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large 1MB object array</td><td>2,965,557</td><td>2,823,481</td><td>0.95x</td><td class='winner-oson'>OSON</td></tr>
-<tr><td>Large 4MB object array</td><td>11,701,120</td><td>7,550,372</td><td>0.65x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Single update 100 fields</td><td>1,952,820</td><td>1,310,893</td><td>0.67x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Single update 500 fields</td><td>1,987,706</td><td>1,108,162</td><td>0.56x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Single update 1000 fields</td><td>1,944,092</td><td>1,074,378</td><td>0.55x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Multi-update 3 fields</td><td>1,971,949</td><td>1,309,900</td><td>0.66x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Multi-update 5 fields</td><td>2,000,798</td><td>1,301,165</td><td>0.65x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Multi-update 10 fields</td><td>1,959,636</td><td>1,303,595</td><td>0.67x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Large doc ~10KB</td><td>1,951,444</td><td>1,062,652</td><td>0.54x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Large doc ~50KB</td><td>1,986,630</td><td>1,058,811</td><td>0.53x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Large doc ~100KB</td><td>1,984,275</td><td>1,103,444</td><td>0.56x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Large doc ~1024KB</td><td>2,798,974</td><td>1,059,747</td><td>0.38x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Large doc ~4096KB</td><td>7,250,427</td><td>1,108,646</td><td>0.15x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Scalar push 1x1</td><td>1,937,191</td><td>1,137,217</td><td>0.59x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Scalar push 10x1</td><td>20,139,268</td><td>12,201,058</td><td>0.61x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Object push 1x1</td><td>1,908,510</td><td>1,247,177</td><td>0.65x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Object push 10x1</td><td>20,819,024</td><td>13,547,134</td><td>0.65x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Scalar delete beginning</td><td>2,311,899</td><td>1,156,953</td><td>0.50x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Scalar delete middle</td><td>3,928,843</td><td>1,160,904</td><td>0.30x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Scalar delete end</td><td>2,238,271</td><td>1,225,322</td><td>0.55x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Object delete beginning</td><td>2,247,999</td><td>1,067,409</td><td>0.47x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Object delete middle</td><td>4,127,897</td><td>1,068,444</td><td>0.26x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Object delete end</td><td>2,222,301</td><td>1,045,862</td><td>0.47x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Large 1MB scalar array</td><td>3,248,805</td><td>7,586,679</td><td>2.34x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr><td>Large 4MB scalar array</td><td>7,817,765</td><td>38,106,668</td><td>4.87x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr><td>Large 1MB object array</td><td>12,346,461</td><td>4,747,576</td><td>0.38x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Large 4MB object array</td><td>14,521,214</td><td>11,346,450</td><td>0.78x</td><td class='winner-oson'>OSON</td></tr>
 </table></div><div class="section">
     <h2>Adjusted Performance (Protocol Overhead Removed)</h2>
     <p class="note">Shows what OSON performance would be if Oracle's protocol matched MongoDB's speed.</p>
     <table>
         <tr><th>Test Case</th><th>MongoDB (ns)</th><th>OSON Adjusted (ns)</th><th>Overhead Removed (ns)</th><th>Adj Ratio</th><th>Winner</th></tr>
-<tr><td>Single update 100 fields</td><td>425,560</td><td>784,899</td><td>509,347</td><td>1.84x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Single update 500 fields</td><td>459,412</td><td>603,873</td><td>509,347</td><td>1.31x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Single update 1000 fields</td><td>487,106</td><td>617,404</td><td>509,347</td><td>1.27x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Multi-update 3 fields</td><td>408,014</td><td>786,943</td><td>509,347</td><td>1.93x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Multi-update 5 fields</td><td>400,074</td><td>736,538</td><td>509,347</td><td>1.84x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Multi-update 10 fields</td><td>390,778</td><td>740,057</td><td>509,347</td><td>1.89x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large doc ~10KB</td><td>348,414</td><td>566,389</td><td>509,347</td><td>1.63x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large doc ~50KB</td><td>351,133</td><td>571,123</td><td>509,347</td><td>1.63x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large doc ~100KB</td><td>372,417</td><td>582,063</td><td>509,347</td><td>1.56x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr class='highlight'><td>Large doc ~1024KB</td><td>601,795</td><td>592,741</td><td>509,347</td><td>0.98x</td><td class='winner-oson'>OSON</td></tr>
-<tr class='highlight'><td>Large doc ~4096KB</td><td>1,869,670</td><td>587,005</td><td>509,347</td><td>0.31x</td><td class='winner-oson'>OSON</td></tr>
-<tr><td>Scalar push 1x1</td><td>368,973</td><td>631,759</td><td>509,347</td><td>1.71x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Scalar push 10x1</td><td>4,027,174</td><td>13,959,101</td><td>509,347</td><td>3.47x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Object push 1x1</td><td>427,639</td><td>749,093</td><td>509,347</td><td>1.75x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Object push 10x1</td><td>5,748,507</td><td>14,569,716</td><td>509,347</td><td>2.53x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Scalar delete beginning</td><td>348,273</td><td>677,208</td><td>509,347</td><td>1.94x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr class='highlight'><td>Scalar delete middle</td><td>717,622</td><td>670,952</td><td>509,347</td><td>0.93x</td><td class='winner-oson'>OSON</td></tr>
-<tr><td>Scalar delete end</td><td>342,555</td><td>681,095</td><td>509,347</td><td>1.99x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Object delete beginning</td><td>381,226</td><td>560,379</td><td>509,347</td><td>1.47x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr class='highlight'><td>Object delete middle</td><td>769,581</td><td>609,575</td><td>509,347</td><td>0.79x</td><td class='winner-oson'>OSON</td></tr>
-<tr><td>Object delete end</td><td>387,885</td><td>561,137</td><td>509,347</td><td>1.45x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large 1MB scalar array</td><td>2,073,746</td><td>6,629,953</td><td>509,347</td><td>3.20x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr><td>Large 4MB scalar array</td><td>9,087,370</td><td>16,698,902</td><td>509,347</td><td>1.84x</td><td class='winner-mongo'>MongoDB</td></tr>
-<tr class='highlight'><td>Large 1MB object array</td><td>2,965,557</td><td>2,314,134</td><td>509,347</td><td>0.78x</td><td class='winner-oson'>OSON</td></tr>
-<tr class='highlight'><td>Large 4MB object array</td><td>11,701,120</td><td>7,041,025</td><td>509,347</td><td>0.60x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Single update 100 fields</td><td>1,952,820</td><td>2,256,743</td><td>-945,850</td><td>1.16x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr><td>Single update 500 fields</td><td>1,987,706</td><td>2,054,012</td><td>-945,850</td><td>1.03x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr><td>Single update 1000 fields</td><td>1,944,092</td><td>2,020,228</td><td>-945,850</td><td>1.04x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr><td>Multi-update 3 fields</td><td>1,971,949</td><td>2,255,750</td><td>-945,850</td><td>1.14x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr><td>Multi-update 5 fields</td><td>2,000,798</td><td>2,247,015</td><td>-945,850</td><td>1.12x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr><td>Multi-update 10 fields</td><td>1,959,636</td><td>2,249,445</td><td>-945,850</td><td>1.15x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr><td>Large doc ~10KB</td><td>1,951,444</td><td>2,008,502</td><td>-945,850</td><td>1.03x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr><td>Large doc ~50KB</td><td>1,986,630</td><td>2,004,661</td><td>-945,850</td><td>1.01x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr><td>Large doc ~100KB</td><td>1,984,275</td><td>2,049,294</td><td>-945,850</td><td>1.03x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr class='highlight'><td>Large doc ~1024KB</td><td>2,798,974</td><td>2,005,597</td><td>-945,850</td><td>0.72x</td><td class='winner-oson'>OSON</td></tr>
+<tr class='highlight'><td>Large doc ~4096KB</td><td>7,250,427</td><td>2,054,496</td><td>-945,850</td><td>0.28x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Scalar push 1x1</td><td>1,937,191</td><td>2,083,067</td><td>-945,850</td><td>1.08x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr class='highlight'><td>Scalar push 10x1</td><td>20,139,268</td><td>13,146,908</td><td>-945,850</td><td>0.65x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Object push 1x1</td><td>1,908,510</td><td>2,193,027</td><td>-945,850</td><td>1.15x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr class='highlight'><td>Object push 10x1</td><td>20,819,024</td><td>14,492,984</td><td>-945,850</td><td>0.70x</td><td class='winner-oson'>OSON</td></tr>
+<tr class='highlight'><td>Scalar delete beginning</td><td>2,311,899</td><td>2,102,803</td><td>-945,850</td><td>0.91x</td><td class='winner-oson'>OSON</td></tr>
+<tr class='highlight'><td>Scalar delete middle</td><td>3,928,843</td><td>2,106,754</td><td>-945,850</td><td>0.54x</td><td class='winner-oson'>OSON</td></tr>
+<tr class='highlight'><td>Scalar delete end</td><td>2,238,271</td><td>2,171,172</td><td>-945,850</td><td>0.97x</td><td class='winner-oson'>OSON</td></tr>
+<tr class='highlight'><td>Object delete beginning</td><td>2,247,999</td><td>2,013,259</td><td>-945,850</td><td>0.90x</td><td class='winner-oson'>OSON</td></tr>
+<tr class='highlight'><td>Object delete middle</td><td>4,127,897</td><td>2,014,294</td><td>-945,850</td><td>0.49x</td><td class='winner-oson'>OSON</td></tr>
+<tr class='highlight'><td>Object delete end</td><td>2,222,301</td><td>1,991,712</td><td>-945,850</td><td>0.90x</td><td class='winner-oson'>OSON</td></tr>
+<tr><td>Large 1MB scalar array</td><td>3,248,805</td><td>8,532,529</td><td>-945,850</td><td>2.63x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr><td>Large 4MB scalar array</td><td>7,817,765</td><td>39,052,518</td><td>-945,850</td><td>5.00x</td><td class='winner-mongo'>MongoDB</td></tr>
+<tr class='highlight'><td>Large 1MB object array</td><td>12,346,461</td><td>5,693,426</td><td>-945,850</td><td>0.46x</td><td class='winner-oson'>OSON</td></tr>
+<tr class='highlight'><td>Large 4MB object array</td><td>14,521,214</td><td>12,292,300</td><td>-945,850</td><td>0.85x</td><td class='winner-oson'>OSON</td></tr>
 </table></div><div class="section">
     <h2>Key Insights</h2>
     <ul>
-        <li><strong>Protocol overhead dominates small operations</strong> - Oracle's ~509,347 ns fixed overhead masks OSON's JSON manipulation efficiency for typical sub-100KB updates.</li>
+        <li><strong>Protocol overhead dominates small operations</strong> - Oracle's ~-945,850 ns fixed overhead masks OSON's JSON manipulation efficiency for typical sub-100KB updates.</li>
         <li><strong>OSON partial updates shine at scale</strong> - At 1MB+ document sizes, MongoDB's O(n) document rewrite cost exceeds Oracle's protocol overhead.</li>
-        <li><strong>MongoDB's wire protocol is highly optimized</strong> - The binary BSON protocol is ~2.1x faster than JDBC/SQL for round-trips.</li>
-        <li><strong>OSON wins increase with overhead removed</strong> - From 3 to 6 wins, particularly for large documents and middle-position array operations.</li>
+        <li><strong>MongoDB's wire protocol is highly optimized</strong> - The binary BSON protocol is ~0.5x faster than JDBC/SQL for round-trips.</li>
+        <li><strong>OSON wins increase with overhead removed</strong> - From 23 to 12 wins, particularly for large documents and middle-position array operations.</li>
     </ul>
 </div>
 <div class="note" style="margin-top: 40px; text-align: center;">

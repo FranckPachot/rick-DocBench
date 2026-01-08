@@ -1,5 +1,6 @@
 package com.docbench.benchmark;
 
+import com.mongodb.WriteConcern;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
@@ -68,13 +69,16 @@ class ServerSideUpdateTest {
     static void setup() throws SQLException {
         Properties props = loadConfigProperties();
 
-        // MongoDB setup
+        // MongoDB setup with production-like write concern (w:1, j:true)
+        // This ensures durability parity with Oracle (which always waits for redo log sync)
         String mongoUri = props.getProperty("mongodb.uri");
         String mongoDbName = props.getProperty("mongodb.database", "testdb");
         mongoClient = MongoClients.create(mongoUri);
         MongoDatabase mongoDb = mongoClient.getDatabase(mongoDbName);
         mongoDb.getCollection("server_update_test").drop();
-        mongoCollection = mongoDb.getCollection("server_update_test");
+        // Configure write concern: w=1 (primary ack), j=true (wait for journal sync)
+        WriteConcern durableWriteConcern = WriteConcern.W1.withJournal(true);
+        mongoCollection = mongoDb.getCollection("server_update_test").withWriteConcern(durableWriteConcern);
 
         // Oracle setup with optimizations:
         // 1. OracleDataSource with statement caching
@@ -113,6 +117,8 @@ class ServerSideUpdateTest {
         System.out.println("    - Statement caching enabled (OracleDataSource)");
         System.out.println("    - ps.setString for scalar bind values (Oracle team recommendation)");
         System.out.println("  MongoDB: $set operator");
+        System.out.println("    - WriteConcern: w=1, j=true (journal sync for durability parity)");
+        System.out.println("    - Single-member replica set configuration");
         System.out.println("=".repeat(80));
 
         // Global warmup

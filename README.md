@@ -239,6 +239,8 @@ We use `w:1` with explicit `j:true` for the following reasons:
 
 - **`j:true` (explicit)**: Required because `j:true` is only *implied* by default for `w: "majority"`, not for `w:1`. Without explicit `j:true`, MongoDB would acknowledge writes after they reach server memory but before journal sync.
 
+Note: With a single-member replica set, `w:1` and `w: "majority"` are functionally equivalent since majority of one is one. However, being explicit about the write concern ensures clarity about what we're measuring and avoids any ambiguity.
+
 This configuration ensures MongoDB waits for journal sync while avoiding the additional latency of replica set acknowledgment, matching Oracle's behavior where every COMMIT waits for redo log flush (`log file sync` wait event).
 
 ### Hardware & Software

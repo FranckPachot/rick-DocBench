@@ -196,15 +196,23 @@ This benchmark uses **production-like durability settings** on both databases to
 | **MongoDB** | Single-member replica set, `w:1`, `j:true` | Waits for journal sync before acknowledging |
 | **Oracle** | Standard configuration | Waits for redo log sync before acknowledging (mandatory) |
 
+### Why j:true Write Concern?
+
+According to the [MongoDB Journaling documentation](https://www.mongodb.com/docs/manual/core/journaling/), without `j:true`, WiredTiger only syncs journal records to disk:
+- *"At every 100 milliseconds"* (configurable via `storage.journal.commitIntervalMs`)
+- *"When WiredTiger creates a new journal file"* (approximately every 100 MB of data)
+
+The documentation explicitly states: *"In between write operations, while the journal records remain in the WiredTiger buffers, updates can be lost following a hard shutdown of mongod."*
+
+**Without `j:true`**, MongoDB acknowledges writes after they reach server memory but before journal sync. This means up to 100ms of writes could be lost in a crash. Oracle always waits for redo log sync before acknowledging. Using `j:true` ensures MongoDB also waits for journal sync, providing equivalent durability guarantees.
+
 ### Why Single-Member Replica Set?
 
-MongoDB is configured as a **single-member replica set** rather than standalone mode for several reasons:
+MongoDB is configured as a **single-member replica set** for several reasons:
 
-1. **Durability Parity**: According to the [MongoDB Journaling documentation](https://www.mongodb.com/docs/manual/core/journaling/), WiredTiger syncs journal records to disk immediately when `j:true` is specified only *"for replica set members (primary and secondary members)"*. Standalone instances rely on the default 100ms sync interval regardless of write concern. This ensures MongoDB waits for writes to be persisted to the journal before acknowledging, matching Oracle's mandatory redo log sync behavior.
+1. **Production-Like Configuration**: According to [MongoDB documentation](https://www.mongodb.com/docs/manual/tutorial/deploy-replica-set-for-testing/), replica sets are recommended even for development to test replica set features. The [MongoDB Community](https://www.mongodb.com/community/forums/t/should-i-use-single-node-replica-set-for-production/190558) notes: *"A single-member replica set leaves flexibility for features like Change Streams, adding a hidden secondary for hot backup, and being able to quickly scale back up later."*
 
-2. **Production-Like Configuration**: According to [MongoDB documentation](https://www.mongodb.com/docs/manual/tutorial/deploy-replica-set-for-testing/), replica sets are recommended even for development to test replica set features. The [MongoDB Community](https://www.mongodb.com/community/forums/t/should-i-use-single-node-replica-set-for-production/190558) notes: *"A single-member replica set leaves flexibility for features like Change Streams, adding a hidden secondary for hot backup, and being able to quickly scale back up later."*
-
-3. **Fair Comparison**: Without `j:true`, MongoDB acknowledges writes after they reach server memory but before journal sync. Oracle always waits for redo log sync. This asymmetry would give MongoDB an unfair speed advantage at the cost of durability.
+2. **Feature Parity**: Single-member replica sets provide access to transactions, change streams, and other replica set features that standalone mode does not support.
 
 ### Write Concern Details
 
@@ -346,12 +354,11 @@ docker exec -it mongodb mongosh -u admin -p password --authenticationDatabase ad
 # Should show: [ { name: 'localhost:27017', state: 'PRIMARY' } ]
 ```
 
-#### Why Not Standalone?
+#### Why Replica Set Instead of Standalone?
 
-Per the [MongoDB Journaling documentation](https://www.mongodb.com/docs/manual/core/journaling/):
-- Standalone mode does not trigger immediate journal sync with `j:true`; only replica set members sync immediately
-- This means standalone relies on the 100ms sync interval, which doesn't provide true durability parity with Oracle
-- Single-member replica sets also provide access to transactions and change streams
+- Single-member replica sets provide access to transactions and change streams
+- [MongoDB recommends replica sets](https://www.mongodb.com/docs/manual/tutorial/deploy-replica-set-for-testing/) even for development environments
+- Provides flexibility for future scaling (adding secondaries, hidden members for backup)
 
 ### Oracle Setup
 

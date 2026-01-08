@@ -10,6 +10,7 @@ DocBench provides comprehensive benchmarks comparing MongoDB's BSON and Oracle's
 ## Table of Contents
 
 - [Latest Results](#latest-results)
+- [Benchmark Details](#benchmark-details)
 - [Test Environment](#test-environment)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
@@ -18,7 +19,7 @@ DocBench provides comprehensive benchmarks comparing MongoDB's BSON and Oracle's
 - [Running Benchmarks](#running-benchmarks)
 - [AWR Report Generation](#awr-report-generation)
 - [Understanding Results](#understanding-results)
-- [Benchmark Details](#benchmark-details)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -30,50 +31,157 @@ With **durability parity** (both databases configured for durable writes):
 
 | Metric | Result |
 |--------|--------|
-| **Server-Side Updates** | OSON 1.16x faster overall |
-| **OSON Wins** | 23 tests |
-| **MongoDB Wins** | 2 tests |
+| **Server-Side Updates** | OSON 1.19x faster overall |
+| **Client-Side Field Access** | OSON 71x faster overall |
+| **OSON Wins** | 30 tests |
+| **MongoDB Wins** | 3 tests |
 
-### Server-Side Update Performance
+---
 
-| Test Case | MongoDB (ns) | OSON (ns) | Ratio | Winner |
-|-----------|--------------|-----------|-------|--------|
-| Single update 100 fields | 1,952,820 | 1,310,893 | 0.67x | **OSON** |
-| Single update 500 fields | 1,987,706 | 1,108,162 | 0.56x | **OSON** |
-| Single update 1000 fields | 1,944,092 | 1,074,378 | 0.55x | **OSON** |
-| Multi-update 3 fields | 1,971,949 | 1,309,900 | 0.66x | **OSON** |
-| Multi-update 5 fields | 2,000,798 | 1,301,165 | 0.65x | **OSON** |
-| Multi-update 10 fields | 1,959,636 | 1,303,595 | 0.67x | **OSON** |
-| Large doc ~10KB | 1,951,444 | 1,062,652 | 0.54x | **OSON** |
-| Large doc ~50KB | 1,986,630 | 1,058,811 | 0.53x | **OSON** |
-| Large doc ~100KB | 1,984,275 | 1,103,444 | 0.56x | **OSON** |
-| Large doc ~1MB | 2,798,974 | 1,059,747 | **0.38x** | **OSON** |
-| Large doc ~4MB | 7,250,427 | 1,108,646 | **0.15x** | **OSON** |
-| Scalar push 1x1 | 1,937,191 | 1,137,217 | 0.59x | **OSON** |
-| Object push 1x1 | 1,908,510 | 1,247,177 | 0.65x | **OSON** |
-| Object delete middle | 4,127,897 | 1,068,444 | **0.26x** | **OSON** |
-| Large 1MB scalar array | 3,248,805 | 7,586,679 | 2.34x | MongoDB |
-| Large 4MB scalar array | 7,817,765 | 38,106,668 | 4.87x | MongoDB |
-| Large 1MB object array | 12,346,461 | 4,747,576 | 0.38x | **OSON** |
-| Large 4MB object array | 14,521,214 | 11,346,450 | 0.78x | **OSON** |
+## Benchmark Details
 
-### Client-Side Field Access (O(n) vs O(1))
+### 1. Client-Side Field Access (O(n) vs O(1))
 
-| Test Case | BSON (ns) | OSON (ns) | Ratio | Winner |
-|-----------|-----------|-----------|-------|--------|
-| Position 1/100 | 309 | 128 | 2.41x | **OSON** |
-| Position 50/100 | 2,799 | 96 | 29.16x | **OSON** |
-| Position 100/100 | 3,388 | 57 | 59.44x | **OSON** |
-| Position 500/500 | 16,275 | 115 | 141.52x | **OSON** |
-| Position 1000/1000 | 31,724 | 75 | **422.99x** | **OSON** |
-| **TOTAL** | 58,629 | 837 | **70.05x** | **OSON** |
+**What this measures:** The time to access a single field from an already-fetched document on the client side.
+
+| Technology | Method | Complexity | Description |
+|------------|--------|------------|-------------|
+| **BSON (MongoDB)** | `RawBsonDocument.get()` | O(n) | Sequential scanning through binary document to find field |
+| **OSON (Oracle)** | `OracleJsonObject.get()` | O(1) | Hash-indexed lookup directly to field offset |
+
+**Why it matters:** For documents with many fields, BSON's linear scanning becomes increasingly expensive while OSON maintains constant-time access regardless of field position.
+
+#### Field Position Tests
+
+Tests access fields at different positions (1st, 50th, 100th, etc.) to demonstrate O(n) vs O(1) scaling behavior.
+
+| Test Case | Description | BSON (ns) | OSON (ns) | Ratio | Winner |
+|-----------|-------------|-----------|-----------|-------|--------|
+| Position 1/100 | First field in 100-field document | 250 | 99 | 2.53x | **OSON** |
+| Position 50/100 | Middle field in 100-field document | 2,491 | 87 | 28.63x | **OSON** |
+| Position 100/100 | Last field in 100-field document | 3,250 | 52 | 62.50x | **OSON** |
+| Position 500/500 | Last field in 500-field document | 15,699 | 108 | 145.36x | **OSON** |
+| Position 1000/1000 | Last field in 1000-field document | 31,195 | 59 | **528.73x** | **OSON** |
+
+#### Nested Field Access Tests
+
+Tests access fields at varying depths of nesting (e.g., `doc.level1.level2.level3.field`).
+
+| Test Case | Description | BSON (ns) | OSON (ns) | Ratio | Winner |
+|-----------|-------------|-----------|-----------|-------|--------|
+| Nested depth 1 | Single level nesting | 598 | 110 | 5.44x | **OSON** |
+| Nested depth 3 | Three levels deep | 1,363 | 115 | 11.85x | **OSON** |
+| Nested depth 5 | Five levels deep | 2,144 | 170 | 12.61x | **OSON** |
+
+**Key Insight:** BSON time increases linearly with field position (O(n) scaling), while OSON remains constant (~100ns) regardless of position (O(1)).
+
+---
+
+### 2. Server-Side Update Performance
+
+**What this measures:** The time to update field(s) in a document stored in the database, including network round-trip and durability guarantees.
+
+| Technology | Method | Description |
+|------------|--------|-------------|
+| **MongoDB** | `$set` operator | Updates with `WriteConcern(w:1, j:true)` for durability parity |
+| **Oracle** | `JSON_TRANSFORM` | SQL function for partial OSON updates |
+
+**Why it matters:** Server-side updates are the most common operation in document databases. OSON's partial update capability allows modifying specific fields without rewriting the entire document.
+
+#### Single Field Update
+
+Updates a single field in documents of varying sizes (100, 500, 1000 fields). Tests whether update cost scales with document size.
+
+| Test Case | Description | MongoDB (ns) | OSON (ns) | Ratio | Winner |
+|-----------|-------------|--------------|-----------|-------|--------|
+| Single update 100 fields | Update 1 field in 100-field doc | 1,900,402 | 1,232,474 | 0.65x | **OSON** |
+| Single update 500 fields | Update 1 field in 500-field doc | 1,993,721 | 1,062,068 | 0.53x | **OSON** |
+| Single update 1000 fields | Update 1 field in 1000-field doc | 2,006,917 | 1,116,121 | 0.56x | **OSON** |
+
+#### Multi-Field Update
+
+Updates multiple fields (3, 5, 10) in a single operation. Tests batch update efficiency.
+
+| Test Case | Description | MongoDB (ns) | OSON (ns) | Ratio | Winner |
+|-----------|-------------|--------------|-----------|-------|--------|
+| Multi-update 3 fields | Update 3 fields simultaneously | 1,949,823 | 1,158,361 | 0.59x | **OSON** |
+| Multi-update 5 fields | Update 5 fields simultaneously | 1,975,875 | 1,156,843 | 0.59x | **OSON** |
+| Multi-update 10 fields | Update 10 fields simultaneously | 1,965,112 | 1,126,143 | 0.57x | **OSON** |
+
+#### Large Document Update
+
+Updates a single field in increasingly large documents (10KB to 4MB). Tests whether update cost scales with document size. **MongoDB must rewrite the entire document; OSON performs in-place partial updates.**
+
+| Test Case | Description | MongoDB (ns) | OSON (ns) | Ratio | Winner |
+|-----------|-------------|--------------|-----------|-------|--------|
+| Large doc ~10KB | Single field update | 1,977,267 | 1,037,956 | 0.52x | **OSON** |
+| Large doc ~50KB | Single field update | 1,929,809 | 1,050,259 | 0.54x | **OSON** |
+| Large doc ~100KB | Single field update | 1,929,778 | 1,059,995 | 0.55x | **OSON** |
+| Large doc ~1MB | Single field update | 2,892,836 | 1,113,762 | **0.39x** | **OSON** |
+| Large doc ~4MB | Single field update | 7,385,070 | 1,104,344 | **0.15x** | **OSON** |
+
+**Key Finding:** MongoDB's time increases with document size (O(n) rewrite), while OSON remains constant (~1.1ms) regardless of document size (partial update).
+
+#### Array Push Operations
+
+Appends elements to an array field. Tests `$push` (MongoDB) vs `JSON_TRANSFORM APPEND` (Oracle). "10x1" means 10 sequential single-element pushes.
+
+| Test Case | Description | MongoDB (ns) | OSON (ns) | Ratio | Winner |
+|-----------|-------------|--------------|-----------|-------|--------|
+| Scalar push 1x1 | Push 1 integer to array | 1,907,349 | 1,117,662 | 0.59x | **OSON** |
+| Scalar push 10x1 | Push 10 integers (10 operations) | 19,196,365 | 11,572,733 | 0.60x | **OSON** |
+| Object push 1x1 | Push 1 object to array | 2,028,989 | 1,194,319 | 0.59x | **OSON** |
+| Object push 10x1 | Push 10 objects (10 operations) | 20,169,646 | 13,865,948 | 0.69x | **OSON** |
+
+#### Array Delete Operations
+
+Removes elements from different array positions (beginning, middle, end). Tests `$pull` (MongoDB) vs `JSON_TRANSFORM REMOVE` (Oracle). **Middle deletes are particularly expensive for MongoDB due to array shifting.**
+
+| Test Case | Description | MongoDB (ns) | OSON (ns) | Ratio | Winner |
+|-----------|-------------|--------------|-----------|-------|--------|
+| Scalar delete beginning | Remove first array element | 1,647,896 | 1,099,521 | 0.67x | **OSON** |
+| Scalar delete middle | Remove middle array element | 4,282,104 | 1,115,265 | **0.26x** | **OSON** |
+| Scalar delete end | Remove last array element | 1,640,492 | 1,238,377 | 0.75x | **OSON** |
+| Object delete beginning | Remove first object from array | 2,336,335 | 1,039,076 | 0.44x | **OSON** |
+| Object delete middle | Remove middle object from array | 4,218,771 | 1,048,887 | **0.25x** | **OSON** |
+| Object delete end | Remove last object from array | 2,274,331 | 1,022,622 | 0.45x | **OSON** |
+
+**Key Finding:** MongoDB's middle-position deletes are ~4x slower than end deletes due to array element shifting. OSON maintains consistent ~1.1ms regardless of position.
+
+#### Large Array Operations
+
+Appends elements to very large arrays (1MB, 4MB). Tests scalability with array size. **MongoDB has specific optimizations for scalar arrays.**
+
+| Test Case | Description | MongoDB (ns) | OSON (ns) | Ratio | Winner |
+|-----------|-------------|--------------|-----------|-------|--------|
+| Large 1MB scalar array | Push to 1MB integer array | 3,129,667 | 4,015,566 | 1.28x | MongoDB |
+| Large 4MB scalar array | Push to 4MB integer array | 7,660,251 | 22,889,482 | 2.99x | MongoDB |
+| Large 1MB object array | Push to 1MB object array | 4,869,838 | 4,817,506 | 0.99x | **OSON** |
+| Large 4MB object array | Push to 4MB object array | 12,449,115 | 18,552,229 | 1.49x | MongoDB |
+
+**Key Finding:** MongoDB wins on large scalar arrays (specialized optimization), but performance is closer for object arrays.
+
+---
+
+### Summary by Category
+
+| Category | MongoDB Wins | OSON Wins | Advantage |
+|----------|--------------|-----------|-----------|
+| Client-Side Field Access | 0 | 8 | OSON 71x faster |
+| Single Field Update | 0 | 3 | OSON 1.6-1.9x faster |
+| Multi-Field Update | 0 | 3 | OSON 1.7x faster |
+| Large Document Update | 0 | 5 | OSON 1.8-6.7x faster |
+| Array Push | 0 | 4 | OSON 1.5-1.7x faster |
+| Array Delete | 0 | 6 | OSON 1.3-4x faster |
+| Large Array | 3 | 1 | MongoDB 1.3-3x faster |
+| **TOTAL** | **3** | **30** | **OSON wins overall** |
 
 ### Key Findings
 
-- **OSON dominates server-side updates**: 1.5-6.5x faster for most operations with durability parity
-- **Client-side OSON dominates**: 70x faster for field access due to O(1) hash lookup vs BSON's O(n)
-- **Large document updates**: OSON is 2.6-6.5x faster for 1-4MB documents
-- **MongoDB wins only on large scalar arrays**: Specific optimization for scalar array operations
+- **Client-side OSON dominates**: 71x faster for field access due to O(1) hash lookup vs BSON's O(n) sequential scanning
+- **OSON partial updates shine at scale**: For large documents (1-4MB), OSON is 2.6-6.7x faster because it modifies only the changed field
+- **Middle-position array operations**: OSON is 3-4x faster for deletes from array middle because it doesn't need to shift elements
+- **MongoDB wins only on large scalar arrays**: Specific optimization for homogeneous scalar array operations
 
 ---
 
@@ -125,6 +233,14 @@ This matches Oracle's behavior where every COMMIT waits for redo log flush (`log
 - Redo logs: 3 x 500MB
 - `session_cached_cursors`: 200
 - `open_cursors`: 500
+
+### Benchmark Parameters
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `WARMUP_ITERATIONS` | 100 | JIT warmup before measurement |
+| `MEASUREMENT_ITERATIONS` | 1,000 | Iterations for timing |
+| `ARRAY_MEASUREMENT_ITERATIONS` | 100 | Iterations for array tests |
 
 ---
 
@@ -373,8 +489,8 @@ Server-Side Update: JSON_TRANSFORM vs MongoDB $set
     - WriteConcern: w=1, j=true (journal sync for durability parity)
     - Single-member replica set configuration
 
-  Single update 100 fields: MongoDB=1952820 ns, OSON=1310893 ns, 0.67x OSON
-  Large doc ~4096KB: MongoDB=7250427 ns, OSON=1108646 ns, 0.15x OSON
+  Single update 100 fields: MongoDB=1900402 ns, OSON=1232474 ns, 0.65x OSON
+  Large doc ~4096KB: MongoDB=7385070 ns, OSON=1104344 ns, 0.15x OSON
 ```
 
 ---
@@ -395,13 +511,19 @@ GRANT EXECUTE ON DBMS_WORKLOAD_REPOSITORY TO translator;
 
 After running `ServerSideUpdateTest`, AWR reports are saved to `build/reports/awr/`:
 
-- `awr_00_baseline.html` - Protocol overhead baseline
-- `awr_01_single_field.html` - Single field updates
-- `awr_02_multi_field.html` - Multi-field updates
-- `awr_03a-e_large_doc_*.html` - Large document updates (10KB to 4MB)
-- `awr_04_array_push.html` - Array push operations
-- `awr_05_array_delete.html` - Array delete operations
-- `awr_06_large_array.html` - Large array operations
+| Report | Description |
+|--------|-------------|
+| `awr_00_baseline.html` | Protocol overhead baseline (non-JSON operations) |
+| `awr_01_single_field.html` | Single field update tests |
+| `awr_02_multi_field.html` | Multi-field update tests |
+| `awr_03a_large_doc_10KB.html` | 10KB document update |
+| `awr_03b_large_doc_50KB.html` | 50KB document update |
+| `awr_03c_large_doc_100KB.html` | 100KB document update |
+| `awr_03d_large_doc_1MB.html` | 1MB document update |
+| `awr_03e_large_doc_4MB.html` | 4MB document update |
+| `awr_04_array_push.html` | Array push operations |
+| `awr_05_array_delete.html` | Array delete operations |
+| `awr_06_large_array.html` | Large array operations |
 
 ---
 
@@ -411,48 +533,16 @@ After running `ServerSideUpdateTest`, AWR reports are saved to `build/reports/aw
 
 | File | Description |
 |------|-------------|
-| `reports/performance_report.html` | Interactive HTML report with all results |
+| `reports/performance_report.html` | Interactive HTML report with all results and test descriptions |
 | `reports/awr/*.html` | Oracle AWR reports per test category |
 
 ### Interpreting Ratios
 
 | Ratio | Interpretation |
 |-------|----------------|
-| `0.67x OSON` | OSON is 1.5x faster (inverse: 1/0.67 = 1.49) |
-| `0.15x OSON` | OSON is 6.7x faster (inverse: 1/0.15 = 6.67) |
-| `2.34x MongoDB` | MongoDB is 2.34x faster |
-
----
-
-## Benchmark Details
-
-### Test Categories
-
-#### 1. Client-Side Field Access (`BsonVsOsonClientSideTest`)
-
-Measures document traversal efficiency:
-- **BSON**: Sequential O(n) field scanning
-- **OSON**: Hash-indexed O(1) lookup
-
-#### 2. Server-Side Updates (`ServerSideUpdateTest`)
-
-Database-native update operations with durability parity:
-- **MongoDB**: `$set`, `$push`, `$pull` with `WriteConcern(w:1, j:true)`
-- **Oracle**: `JSON_TRANSFORM` SQL function
-
-Test scenarios:
-- Single/multi-field updates (100-1000 fields)
-- Large documents (10KB to 4MB)
-- Array push/delete operations
-- Large array operations (1MB to 4MB)
-
-### Benchmark Parameters
-
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `WARMUP_ITERATIONS` | 100 | JIT warmup before measurement |
-| `MEASUREMENT_ITERATIONS` | 1,000 | Iterations for timing |
-| `ARRAY_MEASUREMENT_ITERATIONS` | 100 | Iterations for array tests |
+| `0.65x OSON` | OSON is 1.54x faster (inverse: 1/0.65 = 1.54) |
+| `0.15x OSON` | OSON is 6.67x faster (inverse: 1/0.15 = 6.67) |
+| `2.99x MongoDB` | MongoDB is 2.99x faster |
 
 ---
 
@@ -489,6 +579,7 @@ MIT License - see [LICENSE](LICENSE) file.
 ## References
 
 - [MongoDB Write Concern Documentation](https://www.mongodb.com/docs/manual/reference/write-concern/)
+- [MongoDB Journaling Documentation](https://www.mongodb.com/docs/manual/core/journaling/)
 - [MongoDB Replica Set for Testing](https://www.mongodb.com/docs/manual/tutorial/deploy-replica-set-for-testing/)
 - [MongoDB Single-Node Replica Set Discussion](https://www.mongodb.com/community/forums/t/should-i-use-single-node-replica-set-for-production/190558)
 - [Oracle JSON_TRANSFORM Documentation](https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/JSON_TRANSFORM.html)

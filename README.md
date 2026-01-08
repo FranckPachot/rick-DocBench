@@ -10,12 +10,10 @@ DocBench provides comprehensive benchmarks comparing MongoDB's BSON and Oracle's
 ## Table of Contents
 
 - [Latest Results](#latest-results)
+- [Test Environment](#test-environment)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Database Setup](#database-setup)
-  - [MongoDB Setup](#mongodb-setup)
-  - [Oracle Setup](#oracle-setup)
-  - [Oracle Performance Tuning](#oracle-performance-tuning)
 - [Configuration](#configuration)
 - [Running Benchmarks](#running-benchmarks)
 - [AWR Report Generation](#awr-report-generation)
@@ -26,24 +24,107 @@ DocBench provides comprehensive benchmarks comparing MongoDB's BSON and Oracle's
 
 ## Latest Results
 
-**Test Environment**: Oracle 26ai (23.26.0.0.0), MongoDB 8.0, Java 21, WSL2 Linux
+### Executive Summary
+
+With **durability parity** (both databases configured for durable writes):
+
+| Metric | Result |
+|--------|--------|
+| **Server-Side Updates** | OSON 1.16x faster overall |
+| **OSON Wins** | 23 tests |
+| **MongoDB Wins** | 2 tests |
+
+### Server-Side Update Performance
+
+| Test Case | MongoDB (ns) | OSON (ns) | Ratio | Winner |
+|-----------|--------------|-----------|-------|--------|
+| Single update 100 fields | 1,952,820 | 1,310,893 | 0.67x | **OSON** |
+| Single update 500 fields | 1,987,706 | 1,108,162 | 0.56x | **OSON** |
+| Single update 1000 fields | 1,944,092 | 1,074,378 | 0.55x | **OSON** |
+| Multi-update 3 fields | 1,971,949 | 1,309,900 | 0.66x | **OSON** |
+| Multi-update 5 fields | 2,000,798 | 1,301,165 | 0.65x | **OSON** |
+| Multi-update 10 fields | 1,959,636 | 1,303,595 | 0.67x | **OSON** |
+| Large doc ~10KB | 1,951,444 | 1,062,652 | 0.54x | **OSON** |
+| Large doc ~50KB | 1,986,630 | 1,058,811 | 0.53x | **OSON** |
+| Large doc ~100KB | 1,984,275 | 1,103,444 | 0.56x | **OSON** |
+| Large doc ~1MB | 2,798,974 | 1,059,747 | **0.38x** | **OSON** |
+| Large doc ~4MB | 7,250,427 | 1,108,646 | **0.15x** | **OSON** |
+| Scalar push 1x1 | 1,937,191 | 1,137,217 | 0.59x | **OSON** |
+| Object push 1x1 | 1,908,510 | 1,247,177 | 0.65x | **OSON** |
+| Object delete middle | 4,127,897 | 1,068,444 | **0.26x** | **OSON** |
+| Large 1MB scalar array | 3,248,805 | 7,586,679 | 2.34x | MongoDB |
+| Large 4MB scalar array | 7,817,765 | 38,106,668 | 4.87x | MongoDB |
+| Large 1MB object array | 12,346,461 | 4,747,576 | 0.38x | **OSON** |
+| Large 4MB object array | 14,521,214 | 11,346,450 | 0.78x | **OSON** |
 
 ### Client-Side Field Access (O(n) vs O(1))
 
 | Test Case | BSON (ns) | OSON (ns) | Ratio | Winner |
 |-----------|-----------|-----------|-------|--------|
-| Position 1/100 | 388 | 98 | 3.96x | OSON |
-| Position 50/100 | 2,474 | 103 | 24.02x | OSON |
-| Position 100/100 | 3,183 | 53 | 60.06x | OSON |
-| Position 500/500 | 15,599 | 101 | 154.45x | OSON |
-| Position 1000/1000 | 30,393 | 59 | **515.14x** | OSON |
-| **TOTAL** | 56,062 | 811 | **69.13x** | **OSON** |
+| Position 1/100 | 309 | 128 | 2.41x | **OSON** |
+| Position 50/100 | 2,799 | 96 | 29.16x | **OSON** |
+| Position 100/100 | 3,388 | 57 | 59.44x | **OSON** |
+| Position 500/500 | 16,275 | 115 | 141.52x | **OSON** |
+| Position 1000/1000 | 31,724 | 75 | **422.99x** | **OSON** |
+| **TOTAL** | 58,629 | 837 | **70.05x** | **OSON** |
 
 ### Key Findings
 
-- **Client-side OSON dominates**: 69x faster for field access due to O(1) hash lookup
-- **OSON wins at scale**: 4MB documents show OSON 2x faster than MongoDB
-- **Large object arrays**: OSON outperforms MongoDB on 1MB+ object array operations
+- **OSON dominates server-side updates**: 1.5-6.5x faster for most operations with durability parity
+- **Client-side OSON dominates**: 70x faster for field access due to O(1) hash lookup vs BSON's O(n)
+- **Large document updates**: OSON is 2.6-6.5x faster for 1-4MB documents
+- **MongoDB wins only on large scalar arrays**: Specific optimization for scalar array operations
+
+---
+
+## Test Environment
+
+### Benchmark Configuration
+
+This benchmark uses **production-like durability settings** on both databases to ensure a fair comparison:
+
+| Database | Configuration | Durability Behavior |
+|----------|---------------|---------------------|
+| **MongoDB** | Single-member replica set, `w:1`, `j:true` | Waits for journal sync before acknowledging |
+| **Oracle** | Standard configuration | Waits for redo log sync before acknowledging (mandatory) |
+
+### Why Single-Member Replica Set?
+
+MongoDB is configured as a **single-member replica set** rather than standalone mode for several reasons:
+
+1. **Durability Parity**: The `j:true` write concern (journal acknowledgment) is only fully supported with replica sets. This ensures MongoDB waits for writes to be persisted to the journal before acknowledging, matching Oracle's mandatory redo log sync behavior.
+
+2. **Production-Like Configuration**: According to [MongoDB documentation](https://www.mongodb.com/docs/manual/tutorial/deploy-replica-set-for-testing/), replica sets are recommended even for development to test replica set features. The [MongoDB Community](https://www.mongodb.com/community/forums/t/should-i-use-single-node-replica-set-for-production/190558) notes: *"A single-member replica set leaves flexibility for features like Change Streams, adding a hidden secondary for hot backup, and being able to quickly scale back up later."*
+
+3. **Fair Comparison**: Without `j:true`, MongoDB acknowledges writes after they reach server memory but before journal sync. Oracle always waits for redo log sync. This asymmetry would give MongoDB an unfair speed advantage at the cost of durability.
+
+### Write Concern Details
+
+```java
+// MongoDB write concern used in benchmarks
+WriteConcern durableWriteConcern = WriteConcern.W1.withJournal(true);
+```
+
+- **`w:1`**: Write acknowledged by primary (no waiting for replication)
+- **`j:true`**: Wait for journal sync to disk before acknowledging
+
+This matches Oracle's behavior where every COMMIT waits for redo log flush (`log file sync` wait event).
+
+### Hardware & Software
+
+| Component | Version/Specification |
+|-----------|----------------------|
+| **Oracle Database** | 26ai Free (23.26.0.0.0) |
+| **MongoDB** | 8.0.16 |
+| **Java** | OpenJDK 23.0.2 |
+| **Platform** | WSL2 Linux (Windows 11) |
+| **Storage** | SSD |
+
+### Oracle Tuning Applied
+
+- Redo logs: 3 x 500MB
+- `session_cached_cursors`: 200
+- `open_cursors`: 500
 
 ---
 
@@ -53,7 +134,7 @@ DocBench provides comprehensive benchmarks comparing MongoDB's BSON and Oracle's
 
 | Component | Minimum Version | Recommended |
 |-----------|-----------------|-------------|
-| Java JDK | 21+ | 21 LTS |
+| Java JDK | 21+ | 21 LTS or 23 |
 | Gradle | 8.0+ | 8.5+ (wrapper included) |
 | MongoDB | 7.0+ | 8.0+ |
 | Oracle Database | 23ai Free | 26ai (23.26+) |
@@ -94,20 +175,43 @@ java -version
 
 ## Database Setup
 
-### MongoDB Setup
+### MongoDB Setup (Single-Member Replica Set)
 
-#### Option A: Docker (Recommended)
+For fair benchmarking with durability parity, MongoDB must be configured as a replica set.
+
+#### Docker Setup (Recommended)
+
+1. **Create a keyfile for replica set authentication:**
 
 ```bash
-# Pull and run MongoDB
+mkdir -p mongodb-keyfile
+openssl rand -base64 756 > mongodb-keyfile/mongo-keyfile
+chmod 400 mongodb-keyfile/mongo-keyfile
+```
+
+2. **Start MongoDB with replica set enabled:**
+
+```bash
 docker run -d \
   --name mongodb \
   -p 27017:27017 \
   -e MONGO_INITDB_ROOT_USERNAME=admin \
   -e MONGO_INITDB_ROOT_PASSWORD=password \
-  mongo:8.0
+  -v mongodb-keyfile:/data/keyfile \
+  mongo:8.0 \
+  mongod --replSet rs0 --bind_ip_all --keyFile /data/keyfile/mongo-keyfile
+```
 
-# Create benchmark user
+3. **Initialize the replica set:**
+
+```bash
+docker exec -it mongodb mongosh -u admin -p password --authenticationDatabase admin \
+  --eval "rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27017'}]})"
+```
+
+4. **Create benchmark user:**
+
+```bash
 docker exec -it mongodb mongosh -u admin -p password --authenticationDatabase admin <<EOF
 use testdb
 db.createUser({
@@ -118,23 +222,24 @@ db.createUser({
 EOF
 ```
 
-#### Option B: Native Installation
+5. **Verify replica set status:**
 
-1. Install MongoDB following [official docs](https://www.mongodb.com/docs/manual/installation/)
-2. Create database and user:
-
-```javascript
-use testdb
-db.createUser({
-  user: "translator",
-  pwd: "translator",
-  roles: [{ role: "readWrite", db: "testdb" }]
-})
+```bash
+docker exec -it mongodb mongosh -u admin -p password --authenticationDatabase admin \
+  --eval "rs.status().members.map(m => ({name: m.name, state: m.stateStr}))"
+# Should show: [ { name: 'localhost:27017', state: 'PRIMARY' } ]
 ```
+
+#### Why Not Standalone?
+
+Per [MongoDB best practices](https://www.mongodb.com/docs/manual/tutorial/convert-standalone-to-replica-set/):
+- Standalone mode doesn't fully support `j:true` write concern
+- Single-member replica sets provide access to transactions and change streams
+- Minimal overhead compared to standalone
 
 ### Oracle Setup
 
-#### Option A: Docker (Recommended)
+#### Docker (Recommended)
 
 ```bash
 # Pull Oracle 23ai Free (or 26ai when available)
@@ -149,13 +254,7 @@ docker logs -f oracle-free
 # Wait until you see: "DATABASE IS READY TO USE!"
 ```
 
-#### Option B: Native Installation
-
-1. Download Oracle Database 23ai Free from [Oracle](https://www.oracle.com/database/free/)
-2. Follow installation guide for your platform
-3. Create pluggable database (PDB) if not using default FREEPDB1
-
-### Create Benchmark User
+#### Create Benchmark User
 
 Connect as SYSDBA and run:
 
@@ -183,9 +282,6 @@ GRANT SELECT ON V_$DATABASE TO translator;
 GRANT SELECT ON V_$SESSION TO translator;
 GRANT SELECT ON V_$SQLAREA TO translator;
 GRANT EXECUTE ON DBMS_WORKLOAD_REPOSITORY TO translator;
-
--- Verify grants
-SELECT * FROM dba_sys_privs WHERE grantee = 'TRANSLATOR';
 ```
 
 ### Oracle Performance Tuning
@@ -198,8 +294,6 @@ Small redo logs cause checkpoint waits that skew results. Increase to 500MB each
 
 ```sql
 -- Connect as SYSDBA
-ALTER SESSION SET CONTAINER = FREEPDB1;
-
 -- Check current redo log sizes
 SELECT group#, bytes/1024/1024 AS size_mb, status FROM v$log;
 
@@ -213,48 +307,17 @@ ALTER SYSTEM SWITCH LOGFILE;
 ALTER SYSTEM CHECKPOINT;
 
 -- Drop old groups (only INACTIVE groups can be dropped)
--- Repeat SWITCH LOGFILE until old groups show INACTIVE
 ALTER DATABASE DROP LOGFILE GROUP 1;
 ALTER DATABASE DROP LOGFILE GROUP 2;
 ALTER DATABASE DROP LOGFILE GROUP 3;
-
--- Verify new configuration
-SELECT group#, bytes/1024/1024 AS size_mb, status FROM v$log;
--- Should show: 3 groups of 500MB each
 ```
 
 #### 2. Cursor Caching
 
-Increase cursor caching for prepared statement performance:
-
 ```sql
--- Connect as SYSDBA
 ALTER SYSTEM SET session_cached_cursors = 200 SCOPE = SPFILE;
 ALTER SYSTEM SET open_cursors = 500 SCOPE = SPFILE;
-
--- Restart database to apply SPFILE changes
-SHUTDOWN IMMEDIATE;
-STARTUP;
-
--- Verify settings
-SHOW PARAMETER session_cached_cursors;
-SHOW PARAMETER open_cursors;
-```
-
-#### 3. Verify Configuration
-
-```sql
--- Check redo log configuration (should be 3x500MB)
-SELECT group#, bytes/1024/1024 AS size_mb, status FROM v$log;
-
--- Check cursor settings
-SHOW PARAMETER session_cached_cursors;  -- Should be 200
-SHOW PARAMETER open_cursors;            -- Should be 500
-
--- Check for checkpoint waits (should be 0 or very low)
-SELECT event, total_waits, time_waited
-FROM v$system_event
-WHERE event LIKE '%checkpoint%';
+-- Restart database to apply
 ```
 
 ---
@@ -263,8 +326,6 @@ WHERE event LIKE '%checkpoint%';
 
 ### Create Configuration File
 
-Copy the example and edit with your credentials:
-
 ```bash
 cp config/local.properties.example config/local.properties
 ```
@@ -272,8 +333,8 @@ cp config/local.properties.example config/local.properties
 Edit `config/local.properties`:
 
 ```properties
-# MongoDB Configuration
-mongodb.uri=mongodb://translator:translator@localhost:27017/testdb?authSource=testdb
+# MongoDB Configuration (with replica set)
+mongodb.uri=mongodb://translator:translator@localhost:27017/testdb?replicaSet=rs0&authSource=testdb
 mongodb.database=testdb
 
 # Oracle Configuration
@@ -282,37 +343,7 @@ oracle.username=translator
 oracle.password=translator
 ```
 
-### Configuration Options
-
-| Property | Description | Example |
-|----------|-------------|---------|
-| `mongodb.uri` | MongoDB connection string | `mongodb://user:pass@host:27017/db` |
-| `mongodb.database` | Database name | `testdb` |
-| `oracle.url` | JDBC connection URL | `jdbc:oracle:thin:@host:1521/SERVICE` |
-| `oracle.username` | Oracle username | `translator` |
-| `oracle.password` | Oracle password | `translator` |
-
-### Connection String Formats
-
-**MongoDB with authentication:**
-```
-mongodb://username:password@hostname:27017/database?authSource=authDb
-```
-
-**Oracle with service name:**
-```
-jdbc:oracle:thin:@hostname:1521/SERVICE_NAME
-```
-
-**Oracle with SID:**
-```
-jdbc:oracle:thin:@hostname:1521:SID
-```
-
-**Oracle with TNS:**
-```
-jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=hostname)(PORT=1521))(CONNECT_DATA=(SERVICE_NAME=service)))
-```
+**Important**: Include `replicaSet=rs0` in the MongoDB URI to enable replica set features including `j:true` write concern.
 
 ---
 
@@ -330,43 +361,20 @@ jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=hostname)(PORT=1521)
 # Client-side field access (O(n) vs O(1))
 ./gradlew integrationTest --tests "*.BsonVsOsonClientSideTest"
 
-# BSON O(n) scaling proof
-./gradlew integrationTest --tests "*.ClientSideAccessScalingTest"
-
-# Client-side update efficiency
-./gradlew integrationTest --tests "*.UpdateEfficiencyTest"
-
 # Server-side updates with AWR reports
 ./gradlew integrationTest --tests "*.ServerSideUpdateTest"
-```
-
-### Test Options
-
-```bash
-# Force fresh run (ignore up-to-date checks)
-./gradlew integrationTest --rerun-tasks
-
-# Show detailed output
-./gradlew integrationTest --info
-
-# Run with specific JVM options
-./gradlew integrationTest -Dorg.gradle.jvmargs="-Xmx4g"
 ```
 
 ### Expected Output
 
 ```
-> Task :integrationTest
-
 Server-Side Update: JSON_TRANSFORM vs MongoDB $set
-  AWR enabled - CON_DBID: 1234567890, Instance: 1
-  AWR reports will be saved to: /path/to/DocBench/build/reports/awr
+  MongoDB: $set operator
+    - WriteConcern: w=1, j=true (journal sync for durability parity)
+    - Single-member replica set configuration
 
-  Single update 100 fields: MongoDB=396494 ns, OSON=1011496 ns, 2.55x MongoDB
-  ...
-  Large doc ~4096KB: MongoDB=1856564 ns, OSON=920924 ns, 0.50x OSON
-
-BUILD SUCCESSFUL
+  Single update 100 fields: MongoDB=1952820 ns, OSON=1310893 ns, 0.67x OSON
+  Large doc ~4096KB: MongoDB=7250427 ns, OSON=1108646 ns, 0.15x OSON
 ```
 
 ---
@@ -375,52 +383,25 @@ BUILD SUCCESSFUL
 
 ### Prerequisites
 
-AWR (Automatic Workload Repository) reports require:
-
-1. **Oracle Enterprise Edition features** (available in Oracle Free for development)
-2. **Privileges granted to benchmark user** (see [Oracle Setup](#create-benchmark-user))
-
-### AWR Privileges Required
+AWR reports require Oracle privileges:
 
 ```sql
 GRANT SELECT ON V_$INSTANCE TO translator;
 GRANT SELECT ON V_$DATABASE TO translator;
-GRANT SELECT ON V_$SESSION TO translator;
-GRANT SELECT ON V_$SQLAREA TO translator;
 GRANT EXECUTE ON DBMS_WORKLOAD_REPOSITORY TO translator;
 ```
 
 ### Generated Reports
 
-After running `ServerSideUpdateTest`, AWR reports are saved to:
+After running `ServerSideUpdateTest`, AWR reports are saved to `build/reports/awr/`:
 
-```
-build/reports/awr/
-├── awr_01_single_field.html      # Single field updates
-├── awr_02_multi_field.html       # Multi-field updates
-├── awr_03a_large_doc_10KB.html   # 10KB document updates
-├── awr_03b_large_doc_50KB.html   # 50KB document updates
-├── awr_03c_large_doc_100KB.html  # 100KB document updates
-├── awr_03d_large_doc_1MB.html    # 1MB document updates
-├── awr_03e_large_doc_4MB.html    # 4MB document updates
-├── awr_04_array_push.html        # Array push operations
-├── awr_05_array_delete.html      # Array delete operations
-└── awr_06_large_array.html       # Large array operations
-```
-
-### Viewing Reports
-
-Copy reports to `reports/awr/` for version control:
-
-```bash
-cp build/reports/awr/*.html reports/awr/
-```
-
-Open in browser to analyze Oracle performance metrics including:
-- SQL execution statistics
-- Wait events
-- I/O statistics
-- Buffer cache efficiency
+- `awr_00_baseline.html` - Protocol overhead baseline
+- `awr_01_single_field.html` - Single field updates
+- `awr_02_multi_field.html` - Multi-field updates
+- `awr_03a-e_large_doc_*.html` - Large document updates (10KB to 4MB)
+- `awr_04_array_push.html` - Array push operations
+- `awr_05_array_delete.html` - Array delete operations
+- `awr_06_large_array.html` - Large array operations
 
 ---
 
@@ -432,27 +413,14 @@ Open in browser to analyze Oracle performance metrics including:
 |------|-------------|
 | `reports/performance_report.html` | Interactive HTML report with all results |
 | `reports/awr/*.html` | Oracle AWR reports per test category |
-| `build/reports/tests/integrationTest/` | JUnit test results |
-
-### Performance Report Sections
-
-1. **Executive Summary**: Overall winner and win counts
-2. **Raw Performance Results**: Actual measured times
-3. **Test Category Breakdown**: Results by operation type
 
 ### Interpreting Ratios
 
 | Ratio | Interpretation |
 |-------|----------------|
-| `2.55x MongoDB` | MongoDB is 2.55x faster |
-| `0.50x OSON` | OSON is 2x faster (inverse: 1/0.50 = 2) |
-| `1.00x` | Equal performance |
-
-### Key Metrics
-
-- **Raw Performance**: Actual end-to-end operation time
-- **Latency (ns)**: Time per operation in nanoseconds
-- **Ratio**: Performance comparison (e.g., 2.5x means one is 2.5 times faster)
+| `0.67x OSON` | OSON is 1.5x faster (inverse: 1/0.67 = 1.49) |
+| `0.15x OSON` | OSON is 6.7x faster (inverse: 1/0.15 = 6.67) |
+| `2.34x MongoDB` | MongoDB is 2.34x faster |
 
 ---
 
@@ -466,28 +434,14 @@ Measures document traversal efficiency:
 - **BSON**: Sequential O(n) field scanning
 - **OSON**: Hash-indexed O(1) lookup
 
-Tests positions 1, 50, 100, 500, 1000 in documents of corresponding sizes.
+#### 2. Server-Side Updates (`ServerSideUpdateTest`)
 
-#### 2. BSON Scaling Test (`ClientSideAccessScalingTest`)
-
-Proves BSON's O(n) complexity by measuring access time at different field positions within the same document.
-
-#### 3. Update Efficiency (`UpdateEfficiencyTest`)
-
-Client-side update cycles: decode → modify → encode
-- Update at various positions
-- Nested updates at depths 1, 3, 5
-- Field insertion
-- Array growth
-
-#### 4. Server-Side Updates (`ServerSideUpdateTest`)
-
-Database-native update operations:
-- **MongoDB**: `$set`, `$push`, `$pull` operators
+Database-native update operations with durability parity:
+- **MongoDB**: `$set`, `$push`, `$pull` with `WriteConcern(w:1, j:true)`
 - **Oracle**: `JSON_TRANSFORM` SQL function
 
 Test scenarios:
-- Single/multi-field updates
+- Single/multi-field updates (100-1000 fields)
 - Large documents (10KB to 4MB)
 - Array push/delete operations
 - Large array operations (1MB to 4MB)
@@ -498,56 +452,31 @@ Test scenarios:
 |-----------|-------|-------------|
 | `WARMUP_ITERATIONS` | 100 | JIT warmup before measurement |
 | `MEASUREMENT_ITERATIONS` | 1,000 | Iterations for timing |
-| `ARRAY_WARMUP_ITERATIONS` | 10 | Warmup for array tests |
-| `ARRAY_MEASUREMENT_ITERATIONS` | 100 | Iterations for array timing |
+| `ARRAY_MEASUREMENT_ITERATIONS` | 100 | Iterations for array tests |
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
-
-#### "AWR not available" Error
+### MongoDB Replica Set Issues
 
 ```
-AWR not available: ORA-00942: table or view does not exist
+MongoServerError: not primary
 ```
 
-**Solution**: Grant AWR privileges (see [AWR Privileges Required](#awr-privileges-required))
+**Solution**: Verify replica set is initialized:
+```bash
+docker exec mongodb mongosh -u admin -p password --authenticationDatabase admin --eval "rs.status()"
+```
 
-#### Slow Oracle Performance
+### Oracle Checkpoint Waits
 
 Check for checkpoint waits:
 ```sql
 SELECT event, total_waits FROM v$system_event WHERE event LIKE '%checkpoint%';
 ```
 
-**Solution**: Increase redo log size (see [Redo Log Configuration](#1-redo-log-configuration))
-
-#### MongoDB Connection Refused
-
-```
-MongoSocketOpenException: Exception opening socket
-```
-
-**Solution**: Verify MongoDB is running and port 27017 is accessible:
-```bash
-docker ps | grep mongo
-nc -zv localhost 27017
-```
-
-#### Oracle Connection Timeout
-
-```
-ORA-12170: TNS:Connect timeout occurred
-```
-
-**Solution**: Verify Oracle listener is running:
-```bash
-docker logs oracle-free | tail -20
-# Or for native install:
-lsnrctl status
-```
+**Solution**: Increase redo log size to 500MB each.
 
 ---
 
@@ -557,13 +486,9 @@ MIT License - see [LICENSE](LICENSE) file.
 
 ---
 
-## Contributing
+## References
 
-1. Fork the repository
-2. Create a feature branch
-3. Run all tests: `./gradlew clean integrationTest`
-4. Submit a pull request
-
-## Contact
-
-For questions or issues, please open a GitHub issue.
+- [MongoDB Write Concern Documentation](https://www.mongodb.com/docs/manual/reference/write-concern/)
+- [MongoDB Replica Set for Testing](https://www.mongodb.com/docs/manual/tutorial/deploy-replica-set-for-testing/)
+- [MongoDB Single-Node Replica Set Discussion](https://www.mongodb.com/community/forums/t/should-i-use-single-node-replica-set-for-production/190558)
+- [Oracle JSON_TRANSFORM Documentation](https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/JSON_TRANSFORM.html)

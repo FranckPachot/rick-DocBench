@@ -216,15 +216,30 @@ MongoDB is configured as a **single-member replica set** for several reasons:
 
 ### Write Concern Details
 
+#### MongoDB's Recommended Default
+
+According to the [MongoDB Write Concern documentation](https://www.mongodb.com/docs/manual/reference/write-concern/), the recommended write concern for durable writes is:
+
+```javascript
+{ w: "majority" }
+```
+
+With `writeConcernMajorityJournalDefault: true` (the default), `w: "majority"` **implicitly includes `j: true`**, ensuring writes are persisted to the on-disk journal before acknowledgment.
+
+#### Our Benchmark Configuration
+
 ```java
 // MongoDB write concern used in benchmarks
 WriteConcern durableWriteConcern = WriteConcern.W1.withJournal(true);
 ```
 
-- **`w:1`**: Write acknowledged by primary (no waiting for replication)
-- **`j:true`**: Wait for journal sync to disk before acknowledging
+We use `w:1` with explicit `j:true` for the following reasons:
 
-This matches Oracle's behavior where every COMMIT waits for redo log flush (`log file sync` wait event).
+- **`w:1`**: Write acknowledged by primary only. We use this instead of `w: "majority"` to avoid measuring replication overhead, isolating the comparison to single-node write performance.
+
+- **`j:true` (explicit)**: Required because `j:true` is only *implied* by default for `w: "majority"`, not for `w:1`. Without explicit `j:true`, MongoDB would acknowledge writes after they reach server memory but before journal sync.
+
+This configuration ensures MongoDB waits for journal sync while avoiding the additional latency of replica set acknowledgment, matching Oracle's behavior where every COMMIT waits for redo log flush (`log file sync` wait event).
 
 ### Hardware & Software
 

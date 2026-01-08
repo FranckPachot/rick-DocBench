@@ -92,7 +92,7 @@ This benchmark uses **production-like durability settings** on both databases to
 
 MongoDB is configured as a **single-member replica set** rather than standalone mode for several reasons:
 
-1. **Durability Parity**: The `j:true` write concern (journal acknowledgment) is only fully supported with replica sets. This ensures MongoDB waits for writes to be persisted to the journal before acknowledging, matching Oracle's mandatory redo log sync behavior.
+1. **Durability Parity**: According to the [MongoDB Journaling documentation](https://www.mongodb.com/docs/manual/core/journaling/), WiredTiger syncs journal records to disk immediately when `j:true` is specified only *"for replica set members (primary and secondary members)"*. Standalone instances rely on the default 100ms sync interval regardless of write concern. This ensures MongoDB waits for writes to be persisted to the journal before acknowledging, matching Oracle's mandatory redo log sync behavior.
 
 2. **Production-Like Configuration**: According to [MongoDB documentation](https://www.mongodb.com/docs/manual/tutorial/deploy-replica-set-for-testing/), replica sets are recommended even for development to test replica set features. The [MongoDB Community](https://www.mongodb.com/community/forums/t/should-i-use-single-node-replica-set-for-production/190558) notes: *"A single-member replica set leaves flexibility for features like Change Streams, adding a hidden secondary for hot backup, and being able to quickly scale back up later."*
 
@@ -232,10 +232,10 @@ docker exec -it mongodb mongosh -u admin -p password --authenticationDatabase ad
 
 #### Why Not Standalone?
 
-Per [MongoDB best practices](https://www.mongodb.com/docs/manual/tutorial/convert-standalone-to-replica-set/):
-- Standalone mode doesn't fully support `j:true` write concern
-- Single-member replica sets provide access to transactions and change streams
-- Minimal overhead compared to standalone
+Per the [MongoDB Journaling documentation](https://www.mongodb.com/docs/manual/core/journaling/):
+- Standalone mode does not trigger immediate journal sync with `j:true`; only replica set members sync immediately
+- This means standalone relies on the 100ms sync interval, which doesn't provide true durability parity with Oracle
+- Single-member replica sets also provide access to transactions and change streams
 
 ### Oracle Setup
 

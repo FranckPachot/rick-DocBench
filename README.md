@@ -36,52 +36,6 @@ With **durability parity** (both databases configured for durable writes):
 | **OSON Wins** | 30 tests |
 | **MongoDB Wins** | 3 tests |
 
-### Impact of MongoDB Write Concern on Performance
-
-The following table shows how different MongoDB configurations affect benchmark results. Oracle always waits for redo log sync, so its performance remains constant (~1ms per operation).
-
-| Configuration | MongoDB Baseline | MongoDB Wins | OSON Wins | Overall Winner |
-|---------------|------------------|--------------|-----------|----------------|
-| **Standalone (default)** | 452,000 ns | 22 | 3 | MongoDB 1.90x faster |
-| **Replica Set, w:1** | 602,000 ns | 23 | 2 | MongoDB 1.99x faster |
-| **Replica Set, w:1, j:true** | 1,991,000 ns | 3 | 22 | OSON 1.19x faster |
-
-**Key Observations:**
-
-1. **Without j:true**: MongoDB acknowledges writes after they reach server memory but before journal sync. According to the [MongoDB Journaling documentation](https://www.mongodb.com/docs/manual/core/journaling/), *"In between write operations, while the journal records remain in the WiredTiger buffers, updates can be lost following a hard shutdown."* This gives MongoDB a ~3-4x speed advantage but at the cost of durability.
-
-2. **With j:true**: MongoDB waits for journal sync before acknowledging, matching Oracle's durability guarantees. This is the fair comparison for production workloads where data loss is unacceptable.
-
-3. **OSON performance is constant**: Oracle's ~1ms per operation includes mandatory redo log sync. OSON's partial update capability means this time doesn't increase with document size (unlike MongoDB which must rewrite the entire document).
-
-### Detailed Results by Configuration
-
-#### Replica Set with w:1 (no journal sync)
-
-| Test Case | MongoDB (ns) | OSON (ns) | Ratio | Winner |
-|-----------|--------------|-----------|-------|--------|
-| Single update 100 fields | 492,757 | 1,301,784 | 2.64x | MongoDB |
-| Single update 1000 fields | 531,099 | 1,049,410 | 1.98x | MongoDB |
-| Large doc ~1MB | 1,995,498 | 1,026,481 | **0.51x** | **OSON** |
-| Large doc ~4MB | 6,230,384 | 1,099,611 | **0.18x** | **OSON** |
-| Scalar delete middle | 883,683 | 1,085,795 | 1.23x | MongoDB |
-| Large 1MB scalar array | 1,452,584 | 9,261,915 | 6.38x | MongoDB |
-| Large 4MB scalar array | 7,095,155 | 32,380,229 | 4.56x | MongoDB |
-
-#### Replica Set with w:1, j:true (durability parity)
-
-| Test Case | MongoDB (ns) | OSON (ns) | Ratio | Winner |
-|-----------|--------------|-----------|-------|--------|
-| Single update 100 fields | 1,900,402 | 1,232,474 | 0.65x | **OSON** |
-| Single update 1000 fields | 2,006,917 | 1,116,121 | 0.56x | **OSON** |
-| Large doc ~1MB | 2,892,836 | 1,113,762 | **0.39x** | **OSON** |
-| Large doc ~4MB | 7,385,070 | 1,104,344 | **0.15x** | **OSON** |
-| Scalar delete middle | 4,282,104 | 1,115,265 | **0.26x** | **OSON** |
-| Large 1MB scalar array | 3,129,667 | 4,015,566 | 1.28x | MongoDB |
-| Large 4MB scalar array | 7,660,251 | 22,889,482 | 2.99x | MongoDB |
-
-**The j:true write concern adds ~1.4ms to MongoDB operations** (journal sync overhead), which shifts the balance in favor of OSON for most operations.
-
 ---
 
 ## Benchmark Details

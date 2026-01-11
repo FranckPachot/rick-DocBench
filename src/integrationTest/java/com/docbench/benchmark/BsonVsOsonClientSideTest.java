@@ -347,7 +347,7 @@ class BsonVsOsonClientSideTest {
         long totalNanos = 0;
         for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
             long start = System.nanoTime();
-            raw.get(fieldName); // O(n) sequential scan through BSON bytes
+            raw.get(fieldName).toString(); // O(n) sequential scan through BSON bytes
             totalNanos += System.nanoTime() - start;
         }
 
@@ -417,7 +417,7 @@ class BsonVsOsonClientSideTest {
         long totalNanos = 0;
         for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
             long start = System.nanoTime();
-            jsonObj.get(fieldName); // O(1) hash lookup - preserves type
+            jsonObj.get(fieldName).toString(); // O(1) hash lookup - preserves type
             totalNanos += System.nanoTime() - start;
         }
 

@@ -7,6 +7,7 @@ import com.mongodb.client.MongoDatabase;
 import org.bson.BsonValue;
 import org.bson.Document;
 import org.bson.RawBsonDocument;
+import org.bson.codecs.DocumentCodec;
 import org.junit.jupiter.api.*;
 
 import oracle.sql.json.OracleJsonObject;
@@ -345,9 +346,16 @@ class BsonVsOsonClientSideTest {
 
         // Measure ONLY client-side field access (no network)
         long totalNanos = 0;
+        // RawBsonDocument should not be used - see https://dev.to/franckpachot/which-document-class-is-best-to-use-in-java-to-read-mongodb-documents-46n7
+        // so convert it to Document - and include that in the timing
+        // it's done once because that's what applications do: get an object and then access fields
+        long start = System.nanoTime();
+        Document doc = raw.decode(new DocumentCodec());  
+        totalNanos += System.nanoTime() - start;
+        // then measure field access, and add to the timing
         for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
-            long start = System.nanoTime();
-            raw.get(fieldName).toString(); // O(n) sequential scan through BSON bytes
+            start = System.nanoTime();
+            doc.get(fieldName).toString(); // O(n) sequential scan through BSON bytes
             totalNanos += System.nanoTime() - start;
         }
 
@@ -362,26 +370,33 @@ class BsonVsOsonClientSideTest {
         if (raw == null) throw new RuntimeException("Document not found: " + docId);
 
         // Warmup - measure ONLY client-side navigation
+        Document doc = raw.decode(new DocumentCodec());  
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            navigateToField(raw, parts);
+            navigateToField(doc, parts);
         }
 
         // Measure ONLY client-side field access (no network)
         long totalNanos = 0;
+        // RawBsonDocument should not be used - see https://dev.to/franckpachot/which-document-class-is-best-to-use-in-java-to-read-mongodb-documents-46n7
+        // so convert it to Document - and include that in the timing
+        // it's done once because that's what applications do: get an object and then access fields
+        long start = System.nanoTime();
+        doc = raw.decode(new DocumentCodec());  
+        totalNanos += System.nanoTime() - start;
+        // then measure field access, and add to the timing
         for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
-            long start = System.nanoTime();
-            navigateToField(raw, parts); // O(n) at each level
+            start = System.nanoTime();
+            navigateToField(doc, parts).toString(); // O(n) at each level
             totalNanos += System.nanoTime() - start;
         }
 
         return totalNanos / MEASUREMENT_ITERATIONS;
     }
 
-    private BsonValue navigateToField(RawBsonDocument doc, String[] path) {
-        BsonValue current = doc;
+    private Object navigateToField(Document doc, String[] path) {
+        Object current = doc;
         for (String part : path) {
-            if (!current.isDocument()) return null;
-            current = current.asDocument().get(part);
+            current = ((Document) current).get(part); 
             if (current == null) return null;
         }
         return current;
@@ -453,7 +468,7 @@ class BsonVsOsonClientSideTest {
         long totalNanos = 0;
         for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
             long start = System.nanoTime();
-            navigateOsonPath(jsonValue, pathParts); // O(1) at each level
+            navigateOsonPath(jsonValue, pathParts).toString(); // O(1) at each level
             totalNanos += System.nanoTime() - start;
         }
 
